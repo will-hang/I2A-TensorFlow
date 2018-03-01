@@ -1,6 +1,8 @@
 class EnvironmentModel(object):
 	def __init__(self, config):
-		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [stacked, config.n_actions])
+		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.stacked + config.n_actions])
+		self.next_states = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.stacked + config.n_actions])
+		self.rewards = tf.placeholder(tf.float32, [None])
 		# extract features
 		with tf.variable_scope(config.scope):
 			conv1 = layers.conv2d(self.x, 64, 8, stride=2)
@@ -21,6 +23,16 @@ class EnvironmentModel(object):
 			upconv_2 = layers.conv2d_transpose(upconv_3, 128, 6, stride=2)
 			self.pred_state = layers.conv2d_transpose(upconv_2, 4, 8, stride=2, activation_fn=None)
 
+		loss =  config.loss_weight * losses.mean_squared_error(next_states, model.pred_state) + \
+					(1 - config.loss_weight) * losses.mean_squared_error(rewards, model.pred_reward)
+
+		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
+		gradients = tf.gradients(loss, variables)
+		optimizer = tf.train.AdamOptimizer(learning_rate=config.lr)
+		gradients, _ = tf.clip_by_global_norm(gradients, config.max_grad_norm)
+		grads_and_vars = zip(gradients, variables)
+		self.train_op = optimizer.apply_gradients(grads_and_vars)
+
 	def predict(self, state, action):
 		action_tile = np.zeros((*config.frame_dims, config.n_actions))
 		action_tile[:, :, action] = 1
@@ -31,6 +43,27 @@ class EnvironmentModel(object):
 				self.x: stacked
 			})
 		return pred_state, pred_reward
+
+	def train(s, a, r, s_prime, model):
+		s = np.stack(s, axis=0)
+		a = np.array(a)
+		r = np.array(r)
+		s_prime = np.stack(s_prime, axis=0)
+
+		action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
+		for idx, act in enumerate(a):
+			action_tile[idx, :, :, act] = 1
+		stacked = np.concatenate([state, action_tile], axis=-1)
+
+		loss = sess.run(
+			[self.loss], 
+			feed_dict={
+				self.x: stacked,
+				self.next_states: s_prime,
+				self.rewards: r
+			})
+
+		return loss
 
 class Actor():
 	def __init__(self, config, sess):
@@ -77,27 +110,12 @@ class Worker():
 
 		return states, actions, rewards, next_states
 
-def train(s, a, r, s_prime, model):
-	s = np.stack(s, axis=0)
-	a = np.array(a)
-	r = np.array(r)
-	s_prime = np.stack(s_prime, axis=0)
-
-	self.loss = 
-
-	sess.run([], feed_dict={})
-
 def run(config):
 	worker = Worker(config)
 	model = EnvironmentModel(config)
 	for i in range(config.total_updates // config.batch_size):
 		states, actions, rewards, next_states = worker.get_batch(config.batch_size)
-		train(states, actions, rewards, next_states, model)
+		loss = model.train(states, actions, rewards, next_states, model)
 
-
-
-
-
-
-
+		print('Batch {}-{}: Loss {}'.format(i * config.batch_size, (i + 1) * config.batch_size, loss))
 		
