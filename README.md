@@ -1,4 +1,8 @@
-# Installing OpenAI baseline
+# Mini-I2A Tensorflow Implementation
+
+Combining model-based and model-free reinforcement learning
+
+## Installing OpenAI baselines
 
 Go to https://github.com/openai/baselines/ and install following the instructions.
 
