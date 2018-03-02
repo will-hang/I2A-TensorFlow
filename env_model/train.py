@@ -1,3 +1,11 @@
+import tensorflow as tf
+import numpy as np
+import argparse
+import gym
+
+from baselines.common.vec_env.vec_frame_stack import VecFrameStack
+from baselines.common.cmd_util import make_atari_env
+
 class EnvironmentModel(object):
 	def __init__(self, config):
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.stacked + config.n_actions])
