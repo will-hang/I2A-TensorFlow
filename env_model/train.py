@@ -75,12 +75,13 @@ class Actor():
 		self.action = graph.get_tensor_by_name('action')
 
 	def act(self, state):
-		self.inputs = graph.get_tensor_by_name('inputs:0')
-		action = self.sess.run(
-			[self.action],
-			feed_dict={
-				self.inputs: state
-			})
+		action = np.random.choice(list(range(config.n_actions)))
+		# self.inputs = graph.get_tensor_by_name('inputs:0')
+		# action = self.sess.run(
+		# 	[self.action],
+		# 	feed_dict={
+		# 		self.inputs: state
+		# 	})
 		return action
 
 class Worker():
@@ -110,7 +111,7 @@ class Worker():
 
 		return states, actions, rewards, next_states
 
-def run(config):
+def run(sess, config):
 	worker = Worker(config)
 	model = EnvironmentModel(config)
 	for i in range(config.total_updates // config.batch_size):
@@ -118,4 +119,45 @@ def run(config):
 		loss = model.train(states, actions, rewards, next_states, model)
 
 		print('Batch {}-{}: Loss {}'.format(i * config.batch_size, (i + 1) * config.batch_size, loss))
-		
+
+parser = argparse.ArgumentParser(description='A3C')
+parser.add_argument('--env', default = 'PongNoFrameskip-v4',
+                    help='environment to test on')
+parser.add_argument('--num_env', type=int, default = '1',
+                    help='number of envs')
+parser.add_argument('--vf_coeff', type=float, default=0.5,
+                    help='value function loss coefficient')
+parser.add_argument('--entropy_coeff', type=float, default=0.01,
+                    help='entropy loss coefficient')
+parser.add_argument('--lr', type=float, default=7e-4,
+                    help='learning rate')
+parser.add_argument('--max_grad_norm', type=float, default=5,
+                    help='maximum gradient norm for clipping')
+parser.add_argument('--gamma', type=float, default=0.99,
+                    help='discount factor')
+parser.add_argument('--history', type=int, default=4,
+                    help='number of frames in the past to keep in the state')
+parser.add_argument('--policy_type', default='cnn',
+                    help='policy architecture')
+parser.add_argument('--reuse', type=bool, default=False,
+                    help='policy architecture')
+parser.add_argument('--batch_size', type=int, default=64,
+                    help='batch size')
+parser.add_argument('--normalize_adv', type=bool, default=True,
+                    help='normalize advantage')
+
+if __name__ == '__main__':
+	config = parser.parse_args()
+
+	env = VecFrameStack(make_atari_env(config.env, config.num_env, seed), 4)
+	sess = tf.Session()
+
+	config.input_dims = [84, 84, 4]
+	config.output_dims = env.action_space.n
+	config.scope = 'worker'
+	config.reuse = tf.AUTO_REUSE
+
+	sess.run(tf.global_variables_initializer())
+	sess.run(tf.local_variables_initializer())
+
+	run(sess, config)
