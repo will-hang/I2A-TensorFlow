@@ -2,8 +2,11 @@ import numpy as np
 import argparse
 import gym
 import tensorflow.contrib.layers as layers
+<<<<<<< HEAD
 import tensorflow as tf
 import matplotlib.pyplot as plt
+=======
+>>>>>>> f405aca9bc716893321e6bae70951a28ed2ffb6c
 
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.cmd_util import make_atari_env
@@ -128,6 +131,7 @@ class EnvironmentModel(object):
 		# b = s_prime[10, :, :, :]
 		# c = [b[:, :, i] for i in range(4)]
 		# show_images(c)
+
 		return loss
 
 class Actor():
