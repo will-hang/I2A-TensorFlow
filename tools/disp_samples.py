@@ -3,14 +3,14 @@ import matplotlib.pyplot as plt
 
 def show_images(images, cols = 1, titles = None):
 	"""Display a list of images in a single figure with matplotlib.
-	
+
 	Parameters
 	---------
 	images: List of np.arrays compatible with plt.imshow.
-	
-	cols (Default = 1): Number of columns in figure (number of rows is 
+
+	cols (Default = 1): Number of columns in figure (number of rows is
 						set to np.ceil(n_images/float(cols))).
-	
+
 	titles: List of titles corresponding to each image. Must have
 			the same length as titles.
 	"""
@@ -31,4 +31,3 @@ a = np.load('../outputs/preds.npy')
 b = a[0, :, :, :]
 c = [b[:, :, i] for i in range(4)]
 show_images(c)
-
