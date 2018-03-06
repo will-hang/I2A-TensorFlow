@@ -17,14 +17,14 @@ def normalizedColumnsInitializer(std=1.0):
 
 def show_images(images, cols = 1, titles = None):
 	"""Display a list of images in a single figure with matplotlib.
-	
+
 	Parameters
 	---------
 	images: List of np.arrays compatible with plt.imshow.
-	
-	cols (Default = 1): Number of columns in figure (number of rows is 
+
+	cols (Default = 1): Number of columns in figure (number of rows is
 						set to np.ceil(n_images/float(cols))).
-	
+
 	titles: List of titles corresponding to each image. Must have
 			the same length as titles.
 	"""
@@ -44,27 +44,54 @@ def show_images(images, cols = 1, titles = None):
 class EnvironmentModel(object):
 	def __init__(self, config):
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
-		self.actions = tf.placeholder(tf.int32, [None])
-		self.next_states = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
-		self.rewards = tf.placeholder(tf.float32, [None,])
-		# extract features
-		with tf.variable_scope(config.scope):
-			x_padded = tf.pad(self.x, tf.constant([[0, 0], [6, 6], [6, 6], [0, 0]]))
+		self.actions = tf.placeholder(tf.int32, [None, config.n_steps])
+		self.next_states = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked * config.n_steps])
+		self.rewards = tf.placeholder(tf.float32, [None, config.n_steps])
+
+		current_state = self.x
+		pred_rewards_list = []
+		pred_states_list = []
+		for i in range(config.n_steps):
+			pred_reward, pred_state = self.create_one_step_pred(current_state, self.actions[:,i], config)
+			pred_rewards_list.append(pred_reward)
+			pred_states_list.append(pred_state)
+			current_state = pred_state
+
+		self.pred_reward = pred_rewards_list[0]
+		self.pred_state = pred_states_list[0]
+
+		pred_rewards = tf.stack(pred_rewards_list, axis=1)
+		pred_states = tf.concat(pred_states_list, axis=3)
+
+		self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
+						tf.losses.mean_squared_error(self.rewards, pred_rewards)
+
+		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
+		gradients = tf.gradients(self.loss, variables)
+		optimizer = tf.train.AdamOptimizer(learning_rate=config.lr)
+		gradients, _ = tf.clip_by_global_norm(gradients, config.max_grad_norm)
+		grads_and_vars = zip(gradients, variables)
+		self.train_op = optimizer.apply_gradients(grads_and_vars)
+
+	def create_one_step_pred(self, x, a, config):
+		with tf.variable_scope(config.scope, reuse=tf.AUTO_REUSE):
+			# extract features
+			x_padded = tf.pad(x, tf.constant([[0, 0], [6, 6], [6, 6], [0, 0]]))
 			conv1 = layers.conv2d(x_padded, 64, 8, stride=2)
 			conv2 = layers.conv2d(conv1, 128, 6, stride=2)
 			conv3 = layers.conv2d(conv2, 128, 4, stride=2)
 			conv4 = layers.conv2d(conv3, 128, 4, stride=2)
 			feats = layers.flatten(conv4)
 			fc1 = layers.fully_connected(feats, 2048)
-			fc2 = layers.fully_connected(fc1, 2048, activation_fn=None, 
+			fc2 = layers.fully_connected(fc1, 2048, activation_fn=None,
 				weights_initializer=tf.random_uniform_initializer(minval=-1.0, maxval=1.0))
 			# add the action
-			actions_1hot = tf.one_hot(self.actions, config.n_actions)
+			actions_1hot = tf.one_hot(a, config.n_actions)
 			action_vector = layers.fully_connected(actions_1hot, 2048,
 				weights_initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1))
 			combined = fc2 * action_vector
 			# get the predicted reward
-			self.pred_reward = tf.squeeze(layers.fully_connected(combined, 1, activation_fn=None))
+			pred_reward = tf.squeeze(layers.fully_connected(combined, 1, activation_fn=None))
 			# get the predicted next state
 			fc3 = layers.fully_connected(combined, 2048, activation_fn=None)
 			fc4 = layers.fully_connected(fc3, 4608)
@@ -73,17 +100,8 @@ class EnvironmentModel(object):
 			upconv3 = layers.conv2d_transpose(upconv4, 128, 4, stride=2)
 			upconv2 = layers.conv2d_transpose(upconv3, 128, 6, stride=2)
 			upconv1 = layers.conv2d_transpose(upconv2, config.n_stacked, 8, stride=2, activation_fn=None)
-			self.pred_state = upconv1[:, 6:90, 6:90, :]
-
-		self.loss = 	tf.losses.mean_squared_error(self.next_states, self.pred_state) + \
-						tf.losses.mean_squared_error(self.rewards, self.pred_reward)
-
-		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
-		gradients = tf.gradients(self.loss, variables)
-		optimizer = tf.train.AdamOptimizer(learning_rate=config.lr)
-		gradients, _ = tf.clip_by_global_norm(gradients, config.max_grad_norm)
-		grads_and_vars = zip(gradients, variables)
-		self.train_op = optimizer.apply_gradients(grads_and_vars)
+			pred_state = upconv1[:, 6:90, 6:90, :]
+			return pred_reward, pred_state
 
 	def predict(self, s, a):
 		s = np.stack(s, axis=0) / 255.
@@ -101,14 +119,14 @@ class EnvironmentModel(object):
 
 	def train(self, s, a, r, s_prime):
 		s = np.stack(s, axis=0) / 255.
-		a = np.array(a)
-		r = np.array(r)
-
+		a = np.stack(a, axis=0)
+		r = np.stack(r, axis=0)
 		s_prime = np.stack(s_prime, axis=0)
-		pos_indices = s_prime > 87
-		neg_indices = s_prime <= 87
-		s_prime[pos_indices] = 255
-		s_prime[neg_indices] = 0
+
+		# pos_indices = s_prime > 87
+		# neg_indices = s_prime <= 87
+		# s_prime[pos_indices] = 255
+		# s_prime[neg_indices] = 0
 
 		# s_prime =  s_prime / 255.
 		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
@@ -155,14 +173,14 @@ class Worker():
 		self.actor = Actor(config, sess)
 		self.env = env
 
-	def get_batch(self, batch_size):
+	def get_batch(self, batch_size, n_steps):
 		states = []
 		rewards = []
 		actions = []
 		next_states = []
 
 		state = self.env.reset()
-		for i in range(batch_size):
+		for i in range(batch_size + n_steps - 1):
 			action = [self.actor.act(state)]
 			next_state, reward, done, info = self.env.step(action)
 
@@ -175,7 +193,12 @@ class Worker():
 			if done[-1]:
 				state = self.env.reset()
 
-		return states, actions, rewards, next_states
+		nstep_states = states[:batch_size]
+		nstep_rewards = [rewards[i: i+n_steps] for i in range(batch_size)]
+		nstep_actions = [actions[i: i+n_steps] for i in range(batch_size)]
+		nstep_next_states = [np.concatenate(next_states[i: i+n_steps], axis=2) for i in range(batch_size)]
+
+		return nstep_states, nstep_actions, nstep_rewards, nstep_next_states
 
 def run(sess, config, env):
 	worker = Worker(config, env)
@@ -184,7 +207,7 @@ def run(sess, config, env):
 	sess.run(tf.local_variables_initializer())
 	losses = []
 	for i in range(config.total_updates // config.batch_size):
-		states, actions, rewards, next_states = worker.get_batch(config.batch_size)
+		states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
 		loss = model.train(states, actions, rewards, next_states)
 		pred_state, pred_reward = model.predict(states, actions)
 
@@ -214,6 +237,8 @@ parser.add_argument('--loss_weight', type=float, default=0.9,
                 	help='environment loss weighting')
 parser.add_argument('--total_updates', type=int, default=10000000,
                 	help='total number of updates')
+parser.add_argument('--n_steps', type=int, default=1,
+					help='use n-step loss for training')
 
 if __name__ == '__main__':
 	config = parser.parse_args()
