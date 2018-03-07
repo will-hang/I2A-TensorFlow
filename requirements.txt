@@ -2,3 +2,5 @@ tensorflow
 gym
 gym[atari]
 numpy
+opencv-python
+matplotlib

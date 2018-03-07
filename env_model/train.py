@@ -123,10 +123,10 @@ class EnvironmentModel(object):
 		r = np.stack(r, axis=0)
 		s_prime = np.stack(s_prime, axis=0)
 
-		# pos_indices = s_prime > 87
-		# neg_indices = s_prime <= 87
-		# s_prime[pos_indices] = 255
-		# s_prime[neg_indices] = 0
+		pos_indices = s_prime > 87
+		neg_indices = s_prime <= 87
+		s_prime[pos_indices] = 255
+		s_prime[neg_indices] = 0
 
 		# s_prime =  s_prime / 255.
 		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
@@ -203,8 +203,13 @@ class Worker():
 def run(sess, config, env):
 	worker = Worker(config, env)
 	model = EnvironmentModel(config)
-	sess.run(tf.global_variables_initializer())
-	sess.run(tf.local_variables_initializer())
+	saver = tf.train.Saver()
+	if config.use_ckpt:
+		saver.restore(sess, config.use_ckpt)
+		print("Model restored.")
+	else:
+		sess.run(tf.global_variables_initializer())
+		sess.run(tf.local_variables_initializer())
 	losses = []
 	for i in range(config.total_updates // config.batch_size):
 		states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
@@ -215,6 +220,8 @@ def run(sess, config, env):
 		losses.append(loss)
 		np.save('../outputs/losses', losses)
 		print('Batch {}-{}: Loss {}'.format(i * config.batch_size, (i + 1) * config.batch_size, loss))
+	save_path = saver.save(sess, "../ckpts/model.ckpt")
+	print("Model saved in path: %s" % save_path)
 
 parser = argparse.ArgumentParser(description='A3C')
 parser.add_argument('--env', default = 'PongNoFrameskip-v4',
@@ -235,10 +242,12 @@ parser.add_argument('--seed', type=int, default=1234,
                 	help='random seed')
 parser.add_argument('--loss_weight', type=float, default=0.9,
                 	help='environment loss weighting')
-parser.add_argument('--total_updates', type=int, default=10000000,
+parser.add_argument('--total_updates', type=int, default=30000,
                 	help='total number of updates')
 parser.add_argument('--n_steps', type=int, default=1,
 					help='use n-step loss for training')
+parser.add_argument('--use_ckpt', type=str, default=None,
+					help='use saved checkpoint')
 
 if __name__ == '__main__':
 	config = parser.parse_args()
