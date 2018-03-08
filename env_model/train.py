@@ -1,8 +1,8 @@
 import numpy as np
 import argparse
 import gym
-import tensorflow.contrib.layers as layers
 import tensorflow as tf
+import tensorflow.contrib.layers as layers
 import matplotlib.pyplot as plt
 
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
@@ -51,11 +51,13 @@ class EnvironmentModel(object):
 		current_state = self.x
 		pred_rewards_list = []
 		pred_states_list = []
+		reuse = False
 		for i in range(config.n_steps):
-			pred_reward, pred_state = self.create_one_step_pred(current_state, self.actions[:,i], config)
+			pred_reward, pred_state = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
 			pred_rewards_list.append(pred_reward)
 			pred_states_list.append(pred_state)
 			current_state = pred_state
+			reuse = True
 
 		self.pred_reward = pred_rewards_list[0]
 		self.pred_state = pred_states_list[0]
@@ -75,9 +77,9 @@ class EnvironmentModel(object):
 		grads_and_vars = zip(gradients, variables)
 		self.train_op = optimizer.apply_gradients(grads_and_vars)
 
-	def create_one_step_pred(self, x, a, config):
-		with tf.variable_scope(config.scope, reuse=tf.AUTO_REUSE):
-			# encoder
+	def create_one_step_pred(self, x, a, config, reuse):
+		with tf.variable_scope(config.scope, reuse=reuse):
+			# extract features
 			x_padded = tf.pad(x, tf.constant([[0, 0], [6, 6], [6, 6], [0, 0]]))
 			conv1 = layers.conv2d(x_padded, 64, 8, stride=2)
 			conv2 = layers.conv2d(conv1, 128, 6, stride=2)
@@ -239,7 +241,7 @@ parser.add_argument('--max_grad_norm', type=float, default=0.5,
                     help='maximum gradient norm for clipping')
 parser.add_argument('--reuse', type=bool, default=False,
                     help='policy architecture')
-parser.add_argument('--batch_size', type=int, default=64,
+parser.add_argument('--batch_size', type=int, default=128,
                     help='batch size')
 parser.add_argument('--normalize_adv', type=bool, default=True,
                     help='normalize advantage')
@@ -266,6 +268,5 @@ if __name__ == '__main__':
 	config.n_stacked = 4
 	config.n_actions = int(env.action_space.n)
 	config.scope = 'worker'
-	config.reuse = tf.AUTO_REUSE
 
 	run(sess, config, env)
