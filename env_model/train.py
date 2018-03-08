@@ -65,8 +65,10 @@ class EnvironmentModel(object):
 		pred_rewards = tf.stack(pred_rewards_list, axis=1)
 		pred_states = tf.concat(pred_states_list, axis=3)
 
-		self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
-						tf.losses.mean_squared_error(self.rewards, pred_rewards)
+		# self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
+		# 				tf.losses.mean_squared_error(self.rewards, pred_rewards)
+
+		self.loss = tf.losses.mean_squared_error(self.next_states, self.pred_state)
 
 		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
 		gradients = tf.gradients(self.loss, variables)
@@ -85,17 +87,20 @@ class EnvironmentModel(object):
 			conv4 = layers.conv2d(conv3, 128, 4, stride=2)
 			feats = layers.flatten(conv4)
 			fc1 = layers.fully_connected(feats, 2048)
+
+			# transform and add action
 			fc2 = layers.fully_connected(fc1, 2048, activation_fn=None,
 				weights_initializer=tf.random_uniform_initializer(minval=-1.0, maxval=1.0))
-			# add the action
 			actions_1hot = tf.one_hot(a, config.n_actions)
-			action_vector = layers.fully_connected(actions_1hot, 2048,
+			action_vector = layers.fully_connected(actions_1hot, 2048, activation_fn=None,
 				weights_initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1))
 			combined = fc2 * action_vector
+			fc3 = layers.fully_connected(combined, 2048, activation_fn=None)
+
 			# get the predicted reward
 			pred_reward = tf.squeeze(layers.fully_connected(combined, 1, activation_fn=None))
-			# get the predicted next state
-			fc3 = layers.fully_connected(combined, 2048, activation_fn=None)
+
+			# decoder
 			fc4 = layers.fully_connected(fc3, 4608)
 			fc4 = tf.reshape(fc4, [-1, 6, 6, 128])
 			upconv4 = layers.conv2d_transpose(fc4, 128, 4, stride=2)
