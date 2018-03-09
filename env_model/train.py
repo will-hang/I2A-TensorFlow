@@ -69,6 +69,7 @@ class EnvironmentModel(object):
 		# 				tf.losses.mean_squared_error(self.rewards, pred_rewards)
 
 		self.loss = tf.losses.mean_squared_error(self.next_states, self.pred_state)
+		# self.loss = tf.Print(self.loss, [self.next_states, self.pred_state], summarize=15)
 
 		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
 		gradients = tf.gradients(self.loss, variables)
@@ -125,15 +126,11 @@ class EnvironmentModel(object):
 		return pred_state, pred_reward
 
 	def train(self, s, a, r, s_prime):
-		s = np.stack(s, axis=0) / 255.
-		a = np.stack(a, axis=0)
-		r = np.stack(r, axis=0)
-		s_prime = np.stack(s_prime, axis=0)
 
-		pos_indices = s_prime > 87
-		neg_indices = s_prime <= 87
-		s_prime[pos_indices] = 255
-		s_prime[neg_indices] = 0
+		# pos_indices = s_prime > 87
+		# neg_indices = s_prime <= 87
+		# s_prime[pos_indices] = 255
+		# s_prime[neg_indices] = 0
 
 		# s_prime =  s_prime / 255.
 		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
@@ -200,10 +197,10 @@ class Worker():
 			if done[-1]:
 				state = self.env.reset()
 
-		nstep_states = states[:batch_size]
-		nstep_rewards = [rewards[i: i+n_steps] for i in range(batch_size)]
-		nstep_actions = [actions[i: i+n_steps] for i in range(batch_size)]
-		nstep_next_states = [np.concatenate(next_states[i: i+n_steps], axis=2) for i in range(batch_size)]
+		nstep_states = np.stack(states[:batch_size], axis=0)
+		nstep_rewards = np.stack([rewards[i: i+n_steps] for i in range(batch_size)], axis=0)
+		nstep_actions = np.stack([actions[i: i+n_steps] for i in range(batch_size)], axis=0)
+		nstep_next_states = np.stack([np.concatenate(next_states[i: i+n_steps], axis=2) for i in range(batch_size)], axis=0)
 
 		return nstep_states, nstep_actions, nstep_rewards, nstep_next_states
 
@@ -221,9 +218,19 @@ def run(sess, config, env):
 	curr_pred_state = None
 	losses = []
 
-	for i in range(config.total_updates // config.batch_size):
-		states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
-		loss = model.train(states, actions, rewards, next_states)
+	# states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
+	states, actions, rewards, next_states = worker.get_batch(128, config.n_steps)
+	s_mean = np.mean(states, axis=0, keepdims=True)
+	sp_mean = np.mean(next_states, axis=0, keepdims=True)
+	states = (states - s_mean)/255.0
+	next_states = (next_states - sp_mean)/255.0
+	np.save('../outputs/states', states * 255.0 + s_mean)
+	np.save('../outputs/next_states', next_states * 255.0 + sp_mean)
+	# for i in range(config.total_updates // config.batch_size):
+	for i in range(config.total_updates):
+		idx = i % config.batch_size
+		
+		loss = model.train(np.expand_dims(states[idx, :, :, :], axis=0), np.expand_dims(actions[idx, :], axis=0), np.expand_dims(rewards[idx, :], axis=0), np.expand_dims(next_states[idx, :, :, :], axis=0))
 		pred_state, pred_reward = model.predict(states, actions)
 
 		curr_pred_state = pred_state
@@ -232,7 +239,7 @@ def run(sess, config, env):
 
 	save_path = saver.save(sess, config.save_ckpt)
 	print("Model saved in path: %s" % save_path)
-	np.save('../outputs/preds', curr_pred_state)
+	np.save('../outputs/preds', curr_pred_state * 255.0 + sp_mean)
 	np.save('../outputs/losses', losses)
 
 parser = argparse.ArgumentParser(description='A3C')
