@@ -75,8 +75,9 @@ class EnvironmentModel(object):
 			upconv1 = layers.conv2d_transpose(upconv2, config.n_stacked, 8, stride=2, activation_fn=None)
 			self.pred_state = upconv1[:, 6:90, 6:90, :]
 
-		self.loss = 	tf.losses.mean_squared_error(self.next_states, self.pred_state) + \
-						tf.losses.mean_squared_error(self.rewards, self.pred_reward)
+		self.pred_state = tf.concat([self.x[:, :, :, 1:], self.pred_state], axis=-1)
+		self.loss = 	tf.losses.mean_squared_error(self.next_states, self.pred_state)# + \
+						#tf.losses.mean_squared_error(self.rewards, self.pred_reward)
 
 		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
 		gradients = tf.gradients(self.loss, variables)
