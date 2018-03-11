@@ -56,47 +56,33 @@ class EnvironmentModel(object):
         self.next_states = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
         # extract features
         with tf.variable_scope(config.scope):
-            x_padded = tf.pad(self.x, tf.constant([[0, 0], [0, 0], [1, 1], [0, 0]]))
-            conv1 = layers.conv2d(x_padded, 64, 8, stride=2, padding='valid')
-            print('conv1', conv1.get_shape())
-            conv1 = tf.pad(conv1, tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]]))
-            conv2 = layers.conv2d(conv1, 128, 6, stride=2, padding='valid')
-            print('conv2', conv2.get_shape())
-            conv2 = tf.pad(conv2, tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]]))
-            conv3 = layers.conv2d(conv2, 128, 6, stride=2, padding='valid')
-            print('conv3', conv3.get_shape())
-            conv4 = layers.conv2d(conv3, 128, 4, stride=2, padding='valid')
-            print('conv4', conv4.get_shape())
+            x_padded = self.x # tf.pad(self.x, tf.constant([[0, 0], [6, 6], [6, 6], [0, 0]]))
+            conv1 = layers.conv2d(x_padded, 64, 8, stride=2)
+            conv2 = layers.conv2d(conv1, 128, 6, stride=2)
+            conv3 = layers.conv2d(conv2, 128, 6, stride=2)
+            conv4 = layers.conv2d(conv3, 128, 4, stride=2)
             feats = layers.flatten(conv4)
             print(feats.get_shape)
-            fc1 = layers.fully_connected(feats, 2048)
-            fc2 = layers.fully_connected(fc1, 2048, activation_fn=None, 
+            fc1 = layers.fully_connected(feats, 512)
+            fc2 = layers.fully_connected(fc1, 512, activation_fn=None, 
                 weights_initializer=tf.random_uniform_initializer(minval=-1.0, maxval=1.0))
             # add the action
             actions_1hot = tf.one_hot(self.actions, config.n_actions)
-            action_vector = layers.fully_connected(actions_1hot, 2048, activation_fn=None,
+            action_vector = layers.fully_connected(actions_1hot, 512, activation_fn=None,
                 weights_initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1))
             combined = fc2 * action_vector
             # get the predicted next state
-            fc3 = layers.fully_connected(combined, 2048, activation_fn=None,
+            fc3 = layers.fully_connected(combined, 512, activation_fn=None,
                 weights_initializer=tf.random_uniform_initializer(minval=-1.0, maxval=1.0))
-            fc4 = layers.fully_connected(fc3, 11264)
-            fc4 = tf.reshape(fc4, [-1, 11, 8, 128])
-            print('fc4', fc4.get_shape())
-            upconv4 = layers.conv2d_transpose(fc4, 128, 4, stride=2, padding='valid')
-            print('upconv4', upconv4.get_shape())
-            upconv3 = layers.conv2d_transpose(upconv4, 128, 6, stride=2, padding='same')
-            upconv3 = tf.pad(upconv3, tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]]))
-            print('upconv3', upconv3.get_shape())
-            upconv2 = layers.conv2d_transpose(upconv3, 128, 6, stride=2, padding='same')
-            upconv2 = tf.pad(upconv2, tf.constant([[0, 0], [1, 1], [1, 1], [0, 0]]))
-            print('upconv2', upconv2.get_shape())
-            upconv1 = layers.conv2d_transpose(upconv2, config.n_stacked, 8, stride=2, activation_fn=None, padding='same')
-            upconv1 = tf.pad(upconv1, tf.constant([[0, 0], [0, 0], [1, 1], [0, 0]]))
-            print('upconv1', upconv1.get_shape())
-            self.pred_state = upconv1 #[:, 6:90, 6:90, :]
+            fc4 = layers.fully_connected(fc3, 4608)
+            fc4 = tf.reshape(fc4, [-1, 6, 6, 128])
+            upconv4 = layers.conv2d_transpose(fc4, 128, 4, stride=2)
+            upconv3 = layers.conv2d_transpose(upconv4, 128, 6, stride=2)
+            upconv2 = layers.conv2d_transpose(upconv3, 128, 6, stride=2)
+            upconv1 = layers.conv2d_transpose(upconv2, config.n_stacked, 8, stride=2, activation_fn=None)
+            self.pred_state = upconv1 # [:, 6:90, 6:90, :]
 
-        self.loss =     tf.losses.mean_squared_error(self.next_states, self.pred_state)
+        self.loss = tf.losses.mean_squared_error(self.next_states, self.pred_state)
 
         variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
         gradients = tf.gradients(self.loss, variables)
@@ -171,7 +157,7 @@ def extend_frames(frames, actions):
     return np.stack(extended_frames), actions, np.stack(targets)
 
 class Config():
-    frame_dims = [210, 160]
+    frame_dims = [96, 96]
     n_stacked = 3
     scope = 'model'
     n_actions = 6
@@ -192,11 +178,11 @@ def train(game):
         meta = pickle.load(f)
     episodes = meta['episodes']
     mean_obs = meta['mean_obs']
-    #mean_obs = resize(mean_obs, (3, 96, 96))
+    mean_obs = resize(mean_obs, (3, 96, 96))
 
     def pre_process(x):
-        #bsz, dep, _, _ = x.shape
-        #x = np.array([resize(x[i, :, :, :], (dep, 96, 96)) for i in range(bsz)])
+        bsz, dep, _, _ = x.shape
+        x = np.array([resize(x[i, :, :, :], (dep, 96, 96), preserve_range=True) for i in range(bsz)]).astype(np.uint8)
         if x.shape[1] == 12:
             return (x - np.vstack([mean_obs] * 4)) / 255.0
         elif x.shape[1] == 3:
@@ -233,7 +219,7 @@ def train(game):
                         if test_ep == ep_to_print:
                             test_batcher.reset()
                             x, a, y = test_batcher.next_batch()
-                            preds = net.predict(pre_process(x), a)
+                            preds = net.predict(pre_process(x), np.argmax(a, axis=1))
                             y_ = post_process(preds)
                             torchvision.utils.save_image(torch.from_numpy(y_), 'data_reg/acvp-sample/%s-%09d.png' % (game, iteration))
                             torchvision.utils.save_image(torch.from_numpy(y), 'data_reg/acvp-sample/%s-%09d-truth.png' % (game, iteration))
