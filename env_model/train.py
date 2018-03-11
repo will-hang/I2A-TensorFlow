@@ -45,30 +45,33 @@ class EnvironmentModel(object):
 	def __init__(self, config):
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
 		self.actions = tf.placeholder(tf.int32, [None, config.n_steps])
-		self.next_states = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked * config.n_steps])
+		self.next_frames = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_steps])
 		self.rewards = tf.placeholder(tf.float32, [None, config.n_steps])
 
 		current_state = self.x
 		pred_rewards_list = []
+		pred_frames_list = []
 		pred_states_list = []
 		reuse = False
 		for i in range(config.n_steps):
-			pred_reward, pred_state = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
+			# pred_reward, pred_frame = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
+			pred_reward, pred_frame = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
+			pred_state = tf.concat([current_state[:, :, :, 1:], pred_frame], axis=3)
 			pred_rewards_list.append(pred_reward)
+			pred_frames_list.append(pred_frame)
 			pred_states_list.append(pred_state)
-			current_state = pred_state
 			reuse = True
 
 		self.pred_reward = pred_rewards_list[0]
 		self.pred_state = pred_states_list[0]
 
 		pred_rewards = tf.stack(pred_rewards_list, axis=1)
-		pred_states = tf.concat(pred_states_list, axis=3)
+		pred_frames = tf.concat(pred_frames_list, axis=3)
 
 		# self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
 		# 				tf.losses.mean_squared_error(self.rewards, pred_rewards)
 
-		self.loss = tf.losses.mean_squared_error(self.next_states, self.pred_state)
+		self.loss = tf.losses.mean_squared_error(self.next_frames, pred_frames)
 		# self.loss = tf.Print(self.loss, [self.next_states, self.pred_state], summarize=15)
 
 		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
@@ -107,12 +110,11 @@ class EnvironmentModel(object):
 			upconv4 = layers.conv2d_transpose(fc4, 128, 4, stride=2)
 			upconv3 = layers.conv2d_transpose(upconv4, 128, 4, stride=2)
 			upconv2 = layers.conv2d_transpose(upconv3, 128, 6, stride=2)
-			upconv1 = layers.conv2d_transpose(upconv2, config.n_stacked, 8, stride=2, activation_fn=None)
+			upconv1 = layers.conv2d_transpose(upconv2, 1, 8, stride=2, activation_fn=None)
 			pred_state = upconv1[:, 6:90, 6:90, :]
 			return pred_reward, pred_state
 
 	def predict(self, s, a):
-		s = np.stack(s, axis=0) / 255.
 		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
 		# for idx, act in enumerate(a):
 		# 	action_tile[idx, :, :, act] = 1
@@ -125,32 +127,15 @@ class EnvironmentModel(object):
 			})
 		return pred_state, pred_reward
 
-	def train(self, s, a, r, s_prime):
-
-		# pos_indices = s_prime > 87
-		# neg_indices = s_prime <= 87
-		# s_prime[pos_indices] = 255
-		# s_prime[neg_indices] = 0
-
-		# s_prime =  s_prime / 255.
-		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
-		# for idx, act in enumerate(a):
-		# 	action_tile[idx, :, :, act] = 1
-		# stacked = np.concatenate([s, action_tile], axis=-1)
-
+	def train(self, s, a, r, nf):
 		loss, _ = sess.run(
 			[self.loss, self.train_op],
 			feed_dict={
 				self.x: s,
 				self.actions: a,
 				self.rewards: r,
-				self.next_states: s_prime
+				self.next_frames: nf
 			})
-
-		# b = s_prime[10, :, :, :]
-		# c = [b[:, :, i] for i in range(4)]
-		# show_images(c)
-
 		return loss
 
 class Actor():
@@ -188,10 +173,10 @@ class Worker():
 			action = [self.actor.act(state)]
 			next_state, reward, done, info = self.env.step(action)
 
-			next_states.append(np.squeeze(next_state))
 			actions.append(np.squeeze(action))
 			rewards.append(np.squeeze(reward))
 			states.append(np.squeeze(state))
+			next_states.append(np.squeeze(next_state))
 
 			state = next_state
 			if done[-1]:
@@ -219,18 +204,20 @@ def run(sess, config, env):
 	losses = []
 
 	# states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
-	states, actions, rewards, next_states = worker.get_batch(128, config.n_steps)
+	states, actions, rewards, next_states = worker.get_batch(32, config.n_steps)
 	s_mean = np.mean(states, axis=0, keepdims=True)
 	sp_mean = np.mean(next_states, axis=0, keepdims=True)
 	states = (states - s_mean)/255.0
 	next_states = (next_states - sp_mean)/255.0
 	np.save('../outputs/states', states * 255.0 + s_mean)
 	np.save('../outputs/next_states', next_states * 255.0 + sp_mean)
+	next_frames = np.expand_dims(next_states[:, :, :, config.n_stacked-1], axis=3)
 	# for i in range(config.total_updates // config.batch_size):
 	for i in range(config.total_updates):
-		idx = i % config.batch_size
-		
-		loss = model.train(np.expand_dims(states[idx, :, :, :], axis=0), np.expand_dims(actions[idx, :], axis=0), np.expand_dims(rewards[idx, :], axis=0), np.expand_dims(next_states[idx, :, :, :], axis=0))
+		# idx = i % 4
+
+		# loss = model.train(np.expand_dims(states[idx, :, :, :], axis=0), np.expand_dims(actions[idx, :], axis=0), np.expand_dims(rewards[idx, :], axis=0), np.expand_dims(next_frames[idx, :, :, :], axis=0))
+		loss = model.train(states, actions, rewards, next_frames)
 		pred_state, pred_reward = model.predict(states, actions)
 
 		curr_pred_state = pred_state
