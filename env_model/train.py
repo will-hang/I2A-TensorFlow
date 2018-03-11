@@ -205,13 +205,13 @@ def run(sess, config, env):
 
 	states, _, _, _ = worker.get_batch(config.batch_size, config.n_steps)
 	s_mean = np.mean(states, axis=0, keepdims=True)
+	states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
+	states = (states - s_mean)/255.0
+	next_states = (next_states - s_mean)/255.0
+	next_frames = np.expand_dims(next_states[:, :, :, config.n_stacked-1], axis=3)
 
 	# for i in range(config.total_updates // config.batch_size):
 	for i in range(config.total_updates // config.batch_size):
-		states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
-		states = (states - s_mean)/255.0
-		next_states = (next_states - s_mean)/255.0
-		next_frames = np.expand_dims(next_states[:, :, :, config.n_stacked-1], axis=3)
 
 		loss = model.train(states, actions, rewards, next_frames)
 		pred_state, pred_reward = model.predict(states, actions)
@@ -223,8 +223,8 @@ def run(sess, config, env):
 	save_path = saver.save(sess, config.save_ckpt)
 	print("Model saved in path: %s" % save_path)
 	np.save('../outputs/states', states * 255.0 + s_mean)
-	np.save('../outputs/next_states', next_states * 255.0 + sp_mean)
-	np.save('../outputs/preds', curr_pred_state * 255.0 + sp_mean)
+	np.save('../outputs/next_states', next_states * 255.0 + s_mean)
+	np.save('../outputs/preds', curr_pred_state * 255.0 + s_mean)
 	np.save('../outputs/losses', losses)
 
 parser = argparse.ArgumentParser(description='A3C')
