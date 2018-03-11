@@ -189,6 +189,7 @@ class Worker():
 
 		return nstep_states, nstep_actions, nstep_rewards, nstep_next_states
 
+
 def run(sess, config, env):
 	worker = Worker(config, env)
 	model = EnvironmentModel(config)
@@ -203,27 +204,35 @@ def run(sess, config, env):
 	curr_pred_state = None
 	losses = []
 
-	states, _, _, _ = worker.get_batch(config.batch_size, config.n_steps)
+	states, actions, rewards, next_states = worker.get_batch(config.data_size, config.n_steps)
 	s_mean = np.mean(states, axis=0, keepdims=True)
-	states, actions, rewards, next_states = worker.get_batch(config.batch_size, config.n_steps)
 	states = (states - s_mean)/255.0
 	next_states = (next_states - s_mean)/255.0
 	next_frames = np.expand_dims(next_states[:, :, :, config.n_stacked-1], axis=3)
 
 	# for i in range(config.total_updates // config.batch_size):
-	for i in range(config.total_updates // config.batch_size):
+	for epoch in range(config.num_epochs):
+		num_batches = config.data_size // config.batch_size
+		for i in range(num_batches):
+			start_idx = i * config.batch_size
+			end_idx = (i+1) * config.batch_size
+			s_batch = states[start_idx:end_idx, :, :, :]
+			a_batch = actions[start_idx:end_idx, :]
+			r_batch = rewards[start_idx:end_idx, :]
+			ns_batch = next_states[start_idx:end_idx, :, :, :]
+			nf_batch = np.expand_dims(ns_batch[:, :, :, config.n_stacked-1], axis=3)
 
-		loss = model.train(states, actions, rewards, next_frames)
-		pred_state, pred_reward = model.predict(states, actions)
+			loss = model.train(s_batch, a_batch, r_batch, nf_batch)
+			pred_state, pred_reward = model.predict(s_batch, a_batch)
 
-		curr_pred_state = pred_state
-		losses.append(loss)
-		print('Batch {}-{}: Loss {}'.format(i * config.batch_size, (i + 1) * config.batch_size, loss))
+			curr_pred_state = pred_state
+			losses.append(loss)
+			print('Epoch {}, Batch {}-{}: Loss {}'.format(epoch, i * config.batch_size, (i + 1) * config.batch_size, loss))
 
 	save_path = saver.save(sess, config.save_ckpt)
 	print("Model saved in path: %s" % save_path)
-	np.save('../outputs/states', states * 255.0 + s_mean)
-	np.save('../outputs/next_states', next_states * 255.0 + s_mean)
+	np.save('../outputs/states', s_batch * 255.0 + s_mean)
+	np.save('../outputs/next_states', ns_batch * 255.0 + s_mean)
 	np.save('../outputs/preds', curr_pred_state * 255.0 + s_mean)
 	np.save('../outputs/losses', losses)
 
@@ -240,6 +249,10 @@ parser.add_argument('--reuse', type=bool, default=False,
                     help='policy architecture')
 parser.add_argument('--batch_size', type=int, default=128,
                     help='batch size')
+parser.add_argument('--data_size', type=int, default=256,
+                    help='dataset size')
+parser.add_argument('--num_epochs', type=int, default=10,
+                    help='number of training epochs')
 parser.add_argument('--normalize_adv', type=bool, default=True,
                     help='normalize advantage')
 parser.add_argument('--seed', type=int, default=123,
