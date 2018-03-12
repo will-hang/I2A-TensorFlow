@@ -1,6 +1,8 @@
 import numpy as np
 import argparse
 
+import scipy
+
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.cmd_util import make_atari_env
 
@@ -31,7 +33,7 @@ class Batcher():
 		state = self.env.reset()
 		self.actor.reset()
 		for i in range(num_iter):
-			action = [self.actor.act(state)]
+			action = [self.actor.act(scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))]
 			next_state, reward, done, info = self.env.step(action)
 			try:
 				states
