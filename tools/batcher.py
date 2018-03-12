@@ -2,6 +2,10 @@ import numpy as np
 import argparse
 
 import scipy
+import tensorflow as tf
+from model import LSTMPolicy
+
+import cv2
 
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.cmd_util import make_atari_env
@@ -34,7 +38,12 @@ class Batcher():
 		state = self.env.reset()
 		self.actor.reset()
 		for i in range(num_iter):
-			action = [self.actor.act(scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))]
+			if(i%100==0):
+				print("Iteration: {}".format(i))
+				# cv2.imshow("State 0",scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))
+				# cv2.waitKey(0)
+
+			action = [self.actor.act(scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))[0]]
 			next_state, reward, done, info = self.env.step(action)
 			try:
 				states
@@ -61,6 +70,7 @@ class Batcher():
 			state = next_state
 			if done[-1]:
 				state = self.env.reset()
+				print("Episode Finished with Reward: {}".format(np.sum(rewards)))
 
 		np.save(self.dataset_path+"current_states", states)
 		np.save(self.dataset_path+"actions", actions)
@@ -92,15 +102,17 @@ class Actor():
 		with tf.variable_scope("global"):
 			self.network = LSTMPolicy([42, 42, 1], 6)
 			saver = tf.train.Saver()
-			saver.restore(sess, "/tmp/pong/train/model.ckpt-3022926")
+			saver.restore(sess, "/Users/kevinyang/Desktop/pong/model.ckpt-3369941")
 		self.last_features = self.network.get_initial_features()
 
 	def act(self, state):
+		state = state[:, :, -1]
+		state = state.reshape([42,42,1])
 		assert state.shape == (42, 42, 1)
 		stuff = self.network.act(state, *self.last_features)
 		action, value_, features = stuff[0], stuff[1], stuff[2:]
 		self.last_features = features
-		return action, value_
+		return np.argmax(action), value_
 
 	def reset(self):
 		self.last_features = self.network.get_initial_features()
@@ -147,18 +159,16 @@ if __name__ == '__main__':
 
 	with sess:
 		batcher = Batcher(env, actor)
-		batcher.create_dataset(310)
+		batcher.create_dataset(3200)
 
-		generator = batcher.data_generator()
-		while True:
-			states, actions, next_states, rewards = next(generator)
-			print("STATES SHAPE: {}".format(states.shape))
-			print("ACTIONS SHAPE: {}".format(actions.shape))
-			print("NEXT_STATES SHAPE: {}".format(next_states.shape))
-			print("REWARDS SHAPE: {}".format(rewards.shape))
-
-
-
-
+		# generator = batcher.data_generator()
+		# # while True:
+		# states, actions, next_states, rewards = next(generator)
+		# cv2.imshow("State 0",states[10, :, :, 0])
+		# cv2.waitKey(0)
+		# print("STATES SHAPE: {}".format(states.shape))
+		# print("ACTIONS SHAPE: {}".format(actions.shape))
+		# print("NEXT_STATES SHAPE: {}".format(next_states.shape))
+		# print("REWARDS SHAPE: {}".format(rewards.shape))
 
 
