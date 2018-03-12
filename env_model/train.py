@@ -49,7 +49,6 @@ class EnvironmentModel(object):
 		# self.rewards = tf.placeholder(tf.float32, [None, config.n_steps])
 		it_dict = iterator.get_next()
 		self.states = it_dict["states"]
-		self.states = tf.Print(self.states, [self.states], summarize=5000)
 		self.actions = it_dict["actions"]
 		self.rewards = it_dict["rewards"]
 		self.next_frames = it_dict["next_frames"]
@@ -57,27 +56,31 @@ class EnvironmentModel(object):
 		current_state = self.states
 		pred_frames_list = []
 		pred_states_list = []
+		pred_rewards_list = []
 		reuse = False
 		for i in range(config.n_steps):
 			# pred_reward, pred_frame = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
 			action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
 			action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
 			current_inputs = tf.concat([current_state, action_tile], axis=-1)
-			pred_frame = self.create_one_step_pred(current_inputs, config, reuse)
+			pred_frame, pred_reward = self.create_one_step_pred(current_inputs, config, reuse)
 			pred_state = tf.concat([current_state[:, :, :, 1:config.n_stacked], pred_frame], axis=3)
 			pred_frames_list.append(pred_frame)
 			pred_states_list.append(pred_state)
+			pred_rewards_list.append(pred_reward)
 			current_state = pred_state
 			reuse = True
 
 		self.pred_state = pred_states_list[0]
+		self.pred_reward = pred_rewards_list[0]
 
 		pred_frames = tf.concat(pred_frames_list, axis=3)
+		pred_rewards = tf.concat(pred_rewards_list, axis=1)
 
 		# self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
 		# 				tf.losses.mean_squared_error(self.rewards, pred_rewards)
 
-		self.loss = tf.losses.mean_squared_error(self.next_frames, pred_frames)
+		self.loss = tf.losses.mean_squared_error(self.next_frames, pred_frames) + tf.losses.mean_squared_error(self.rewards, pred_rewards)
 		# self.loss = tf.Print(self.loss, [self.next_states, self.pred_state], summarize=15)
 
 		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
@@ -93,25 +96,30 @@ class EnvironmentModel(object):
 			conv1 = layers.conv2d(x, 32, 8, stride=2)
 			conv2 = layers.conv2d(conv1, 32, 3)
 			conv3 = layers.conv2d(conv2, 32, 3)
-			pred_state = layers.conv2d_transpose(conv2 + conv3, 1, 8, stride=2, activation_fn=None)
-			return pred_state
+			conv4 = layers.conv2d(conv3, 32, 3)
+			encoded = conv2 + conv3 + conv4
 
-	def predict(self, s, a):
-		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
-		# for idx, act in enumerate(a):
-		# 	action_tile[idx, :, :, act] = 1
-		# stacked = np.concatenate([s, action_tile], axis=-1)
-		pred_state, pred_reward = sess.run(
-			[self.pred_state, self.pred_reward],
-			feed_dict={
-				self.x: s,
-				self.actions: a
-			})
-		return pred_state, pred_reward
+			# predict state
+			pred_frame = layers.conv2d_transpose(encoded, 1, 8, stride=2, activation_fn=None)
+
+			# predict reward
+			rconv1 = layers.conv2d(encoded, 32, 3)
+			rpool1 = layers.max_pool2d(rconv1, 2)
+			rconv2 = layers.conv2d(rpool1, 32, 3)
+			rpool2 = layers.max_pool2d(rconv1, 2, padding="same")
+			rpool2 = layers.flatten(rpool2)
+			rfc1 = layers.fully_connected(rpool2, 100)
+			pred_reward = layers.fully_connected(rfc1, 1, activation_fn=None)
+
+			return pred_frame, pred_reward
+
+	def predict(self):
+		pred_state = sess.run([self.pred_state])[0]
+		return pred_state
 
 	def train(self):
-		loss, pred_state, _ = sess.run([self.loss, self.pred_state, self.train_op])
-		return loss, pred_state
+		loss, pred_state, pred_reward, _ = sess.run([self.loss, self.pred_state, self.pred_reward, self.train_op])
+		return loss, pred_state, pred_reward
 
 class Actor():
 	def __init__(self, config, sess):
@@ -171,19 +179,19 @@ def run(sess, config, env):
 	curr_pred_state = None
 	losses = []
 
-	states, actions, rewards, next_states = worker.get_batch(config.data_size, config.n_steps)
-	s_mean = np.mean(states, axis=0, keepdims=True)
-	states = (states - s_mean)/255.0
-	next_states = (next_states - s_mean)/255.0
-	next_frames = np.expand_dims(next_states[:, :, :, config.n_stacked-1], axis=3)
+	states_placeholder = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
+	actions_placeholder = tf.placeholder(tf.int32, [None, config.n_steps])
+	nf_placeholder = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_steps])
+	rewards_placeholder = tf.placeholder(tf.float32, [None, config.n_steps])
+
 	dataset = tf.data.Dataset.from_tensor_slices({
-		"states": states,
-		"actions": actions,
-		"rewards": rewards,
-		"next_frames": next_frames
+		"states": states_placeholder,
+		"actions": actions_placeholder,
+		"rewards": rewards_placeholder,
+		"next_frames": nf_placeholder
 	})
 	dataset = dataset.shuffle(config.seed).repeat(config.num_epochs).batch(config.batch_size)
-	iterator = dataset.make_one_shot_iterator()
+	iterator = dataset.make_initializable_iterator()
 
 	model = EnvironmentModel(config, iterator)
 	saver = tf.train.Saver()
@@ -194,24 +202,52 @@ def run(sess, config, env):
 		sess.run(tf.global_variables_initializer())
 		sess.run(tf.local_variables_initializer())
 
+	# train loop
+	train_states, train_actions, train_rewards, train_next_states = worker.get_batch(config.data_size, config.n_steps)
+	print(train_rewards)
+	s_mean = np.mean(train_states, axis=0, keepdims=True)
+	train_states = (train_states - s_mean)/255.0
+	train_next_states = (train_next_states - s_mean)/255.0
+	train_next_frames = np.expand_dims(train_next_states[:, :, :, config.n_stacked-1], axis=3)
+
+	sess.run(iterator.initializer, feed_dict={
+		states_placeholder: train_states,
+		actions_placeholder: train_actions,
+		rewards_placeholder: train_rewards,
+		nf_placeholder: train_next_frames
+	})
+
 	losses = []
 	train_steps = 0
-	curr_pred_state = None
 	while True:
 		train_steps += 1
 		try:
-			loss, pred_state = model.train()
+			loss, pred_state, pred_reward = model.train()
+			print(pred_reward)
 			losses.append(loss)
-			curr_pred_state = pred_state
 			print('Train Step {}: Loss {}'.format(train_steps, loss))
 		except tf.errors.OutOfRangeError:
 			break
+
+	# test loop
+	test_states, test_actions, test_rewards, test_next_states = worker.get_batch(config.batch_size, config.n_steps)
+	test_states = (test_states - s_mean)/255.0
+	test_next_states = (test_next_states - s_mean)/255.0
+	test_next_frames = np.expand_dims(test_next_states[:, :, :, config.n_stacked-1], axis=3)
+
+	sess.run(iterator.initializer, feed_dict={
+		states_placeholder: test_states,
+		actions_placeholder: test_actions,
+		rewards_placeholder: test_rewards,
+		nf_placeholder: test_next_frames
+	})
+	pred_state = model.predict()
 
 	save_path = saver.save(sess, config.save_ckpt)
 	print("Model saved in path: %s" % save_path)
 	# np.save('../outputs/states', test_states * 255.0 + s_mean)
 	# np.save('../outputs/next_states', test_next_states * 255.0 + s_mean)
-	np.save('../outputs/preds', curr_pred_state * 255.0 + s_mean)
+	np.save('../outputs/preds', pred_state * 255.0 + s_mean)
 	np.save('../outputs/losses', losses)
 
 parser = argparse.ArgumentParser(description='A3C')
