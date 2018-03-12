@@ -92,7 +92,7 @@ class Actor():
 			self.network = LSTMPolicy([42, 42, 1], 6)
 			saver = tf.train.Saver()
 			self.sess = tf.Session()
-			saver.restore(self.sess, "/tmp/pong/train/model.ckpt-2230477")
+			saver.restore(self.sess, "/tmp/pong/train/model.ckpt-3022926")
 		self.last_features = self.network.get_initial_features()
 
 	def act(self, state):
