@@ -7,6 +7,7 @@ from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.cmd_util import make_atari_env
 
 tf.reset_default_graph()
+sess = tf.Session()
 
 class Batcher():
 	'''
@@ -91,16 +92,14 @@ class Actor():
 		with tf.variable_scope("global"):
 			self.network = LSTMPolicy([42, 42, 1], 6)
 			saver = tf.train.Saver()
-			self.sess = tf.Session()
-			saver.restore(self.sess, "/tmp/pong/train/model.ckpt-3022926")
+			saver.restore(sess, "/tmp/pong/train/model.ckpt-3022926")
 		self.last_features = self.network.get_initial_features()
 
 	def act(self, state):
 		assert state.shape == (42, 42, 1)
-		with self.sess:
-			stuff = self.network.act(state, *self.last_features)
-			action, value_, features = stuff[0], stuff[1], stuff[2]
-			self.last_features = features
+		stuff = self.network.act(state, *self.last_features)
+		action, value_, features = stuff[0], stuff[1], stuff[2:]
+		self.last_features = features
 		return action, value_
 
 	def reset(self):
@@ -146,17 +145,17 @@ if __name__ == '__main__':
 	config.n_actions = int(env.action_space.n)
 	config.scope = 'worker'
 
+	with sess:
+		batcher = Batcher(env, actor)
+		batcher.create_dataset(310)
 
-	batcher = Batcher(env, actor)
-	batcher.create_dataset(310)
-
-	generator = batcher.data_generator()
-	while True:
-		states, actions, next_states, rewards = next(generator)
-		print("STATES SHAPE: {}".format(states.shape))
-		print("ACTIONS SHAPE: {}".format(actions.shape))
-		print("NEXT_STATES SHAPE: {}".format(next_states.shape))
-		print("REWARDS SHAPE: {}".format(rewards.shape))
+		generator = batcher.data_generator()
+		while True:
+			states, actions, next_states, rewards = next(generator)
+			print("STATES SHAPE: {}".format(states.shape))
+			print("ACTIONS SHAPE: {}".format(actions.shape))
+			print("NEXT_STATES SHAPE: {}".format(next_states.shape))
+			print("REWARDS SHAPE: {}".format(rewards.shape))
 
 
 

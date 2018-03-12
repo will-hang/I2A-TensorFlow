@@ -33,6 +33,7 @@ from model import LSTMPolicy
 # saver.restore(sess, "/tmp/pong/train/model.ckpt-1894351")
 
 tf.reset_default_graph()
+sess = tf.Session()
 
 class Actor():
 	def __init__(self, config):
@@ -40,20 +41,21 @@ class Actor():
 		with tf.variable_scope("global"):
 			self.network = LSTMPolicy([42, 42, 1], 6)
 			saver = tf.train.Saver()
-			self.sess = tf.Session()
-			saver.restore(self.sess, "/tmp/pong/train/model.ckpt-2230477")
+			saver.restore(sess, "/tmp/pong/train/model.ckpt-3244615")
 		self.last_features = self.network.get_initial_features()
 
 	def act(self, state):
 		assert state.shape == (42, 42, 1)
-		with self.sess:
-			stuff = self.network.act(state, *self.last_features)
-			action, value_, features = stuff[0], stuff[1], stuff[2]
-			self.last_features = features
+		stuff = self.network.act(state, *self.last_features)
+		action, value_, features = stuff[0], stuff[1], stuff[2:]
+		self.last_features = features
 		return action, value_
 
 	def reset(self):
 		self.last_features = self.network.get_initial_features()
 
 actor = Actor(4)
-print(actor.act(np.ones((42, 42, 1))))
+with sess:
+	print(actor.act(np.ones((42, 42, 1))))
+	print(actor.act(np.ones((42, 42, 1))))
+	print(actor.act(np.ones((42, 42, 1))))
