@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 
 def show_images(images, cols = 1, titles = None):
 	"""Display a list of images in a single figure with matplotlib.
@@ -22,12 +23,17 @@ def show_images(images, cols = 1, titles = None):
 		a = fig.add_subplot(cols, np.ceil(n_images/float(cols)), n + 1)
 		if image.ndim == 2:
 			plt.gray()
-		plt.imshow(image)
+		plt.imshow(image, vmin=0, vmax=255)
 		a.set_title(title)
 	fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
 	plt.show()
 
-a = np.load('../outputs/preds.npy')
-b = a[0, :, :, :]
-c = [b[:, :, i] for i in range(4)]
-show_images(c)
+idx = int(sys.argv[1])
+a1 = np.load('../outputs/preds.npy')
+b1 = a1[idx, :, :, :]
+c1 = [b1[:, :, i] for i in range(4)]
+# a2 = np.load('../outputs/next_states.npy')
+# b2 = a2[idx, :, :, :]
+# c2 = [b2[:, :, i] for i in range(4)]
+# c = c1+c2
+show_images(c1)
