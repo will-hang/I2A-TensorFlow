@@ -48,29 +48,30 @@ class EnvironmentModel(object):
 		# self.next_frames = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_steps])
 		# self.rewards = tf.placeholder(tf.float32, [None, config.n_steps])
 		it_dict = iterator.get_next()
-		self.x = it_dict["states"]
+		self.states = it_dict["states"]
+		self.states = tf.Print(self.states, [self.states], summarize=5000)
 		self.actions = it_dict["actions"]
 		self.rewards = it_dict["rewards"]
 		self.next_frames = it_dict["next_frames"]
 
-		current_state = self.x
-		pred_rewards_list = []
+		current_state = self.states
 		pred_frames_list = []
 		pred_states_list = []
 		reuse = False
 		for i in range(config.n_steps):
 			# pred_reward, pred_frame = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
-			pred_reward, pred_frame = self.create_one_step_pred(current_state, self.actions[:,i], config, reuse)
-			pred_state = tf.concat([current_state[:, :, :, 1:], pred_frame], axis=3)
-			pred_rewards_list.append(pred_reward)
+			action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
+			action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
+			current_inputs = tf.concat([current_state, action_tile], axis=-1)
+			pred_frame = self.create_one_step_pred(current_inputs, config, reuse)
+			pred_state = tf.concat([current_state[:, :, :, 1:config.n_stacked], pred_frame], axis=3)
 			pred_frames_list.append(pred_frame)
 			pred_states_list.append(pred_state)
+			current_state = pred_state
 			reuse = True
 
-		self.pred_reward = pred_rewards_list[0]
 		self.pred_state = pred_states_list[0]
 
-		pred_rewards = tf.stack(pred_rewards_list, axis=1)
 		pred_frames = tf.concat(pred_frames_list, axis=3)
 
 		# self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
@@ -86,38 +87,14 @@ class EnvironmentModel(object):
 		grads_and_vars = zip(gradients, variables)
 		self.train_op = optimizer.apply_gradients(grads_and_vars)
 
-	def create_one_step_pred(self, x, a, config, reuse):
+	def create_one_step_pred(self, x, config, reuse):
 		with tf.variable_scope(config.scope, reuse=reuse):
 			# extract features
-			x_padded = tf.pad(x, tf.constant([[0, 0], [6, 6], [6, 6], [0, 0]]))
-			conv1 = layers.conv2d(x_padded, 64, 8, stride=2)
-			conv2 = layers.conv2d(conv1, 128, 6, stride=2)
-			conv3 = layers.conv2d(conv2, 128, 4, stride=2)
-			conv4 = layers.conv2d(conv3, 128, 4, stride=2)
-			feats = layers.flatten(conv4)
-			fc1 = layers.fully_connected(feats, 2048)
-
-			# transform and add action
-			fc2 = layers.fully_connected(fc1, 2048, activation_fn=None,
-				weights_initializer=tf.random_uniform_initializer(minval=-1.0, maxval=1.0))
-			actions_1hot = tf.one_hot(a, config.n_actions)
-			action_vector = layers.fully_connected(actions_1hot, 2048, activation_fn=None,
-				weights_initializer=tf.random_uniform_initializer(minval=-0.1, maxval=0.1))
-			combined = fc2 * action_vector
-			fc3 = layers.fully_connected(combined, 2048, activation_fn=None)
-
-			# get the predicted reward
-			pred_reward = tf.squeeze(layers.fully_connected(combined, 1, activation_fn=None))
-
-			# decoder
-			fc4 = layers.fully_connected(fc3, 4608)
-			fc4 = tf.reshape(fc4, [-1, 6, 6, 128])
-			upconv4 = layers.conv2d_transpose(fc4, 128, 4, stride=2)
-			upconv3 = layers.conv2d_transpose(upconv4, 128, 4, stride=2)
-			upconv2 = layers.conv2d_transpose(upconv3, 128, 6, stride=2)
-			upconv1 = layers.conv2d_transpose(upconv2, 1, 8, stride=2, activation_fn=None)
-			pred_state = upconv1[:, 6:90, 6:90, :]
-			return pred_reward, pred_state
+			conv1 = layers.conv2d(x, 32, 8, stride=2)
+			conv2 = layers.conv2d(conv1, 32, 3)
+			conv3 = layers.conv2d(conv2, 32, 3)
+			pred_state = layers.conv2d_transpose(conv2 + conv3, 1, 8, stride=2, activation_fn=None)
+			return pred_state
 
 	def predict(self, s, a):
 		# action_tile = np.zeros((config.batch_size, *config.frame_dims, config.n_actions))
