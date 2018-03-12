@@ -4,6 +4,7 @@ import argparse
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.cmd_util import make_atari_env
 
+tf.reset_default_graph()
 
 class Batcher():
 	'''
@@ -28,6 +29,7 @@ class Batcher():
 	def create_dataset(self, num_iter):
 		self.num_iter = num_iter
 		state = self.env.reset()
+		self.actor.reset()
 		for i in range(num_iter):
 			action = [self.actor.act(state)]
 			next_state, reward, done, info = self.env.step(action)
@@ -84,10 +86,23 @@ class Batcher():
 class Actor():
 	def __init__(self, config):
 		self.config = config
+		with tf.variable_scope("global"):
+			self.network = LSTMPolicy([42, 42, 1], 6)
+			saver = tf.train.Saver()
+			self.sess = tf.Session()
+			saver.restore(self.sess, "/tmp/pong/train/model.ckpt-2230477")
+		self.last_features = self.network.get_initial_features()
 
 	def act(self, state):
-		action = np.random.choice(list(range(config.n_actions)))
-		return action
+		assert state.shape == (42, 42, 1)
+		with self.sess:
+			stuff = self.network.act(state, *self.last_features)
+			action, value_, features = stuff[0], stuff[1], stuff[2]
+			self.last_features = features
+		return action, value_
+
+	def reset(self):
+		self.last_features = self.network.get_initial_features()
 
 
 parser = argparse.ArgumentParser(description='A3C')
