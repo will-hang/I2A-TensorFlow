@@ -90,7 +90,7 @@ class EnvironmentModel(object):
 		# self.loss = 	tf.losses.mean_squared_error(self.next_states, pred_states) + \
 		# 				tf.losses.mean_squared_error(self.rewards, pred_rewards)
 
-		self.loss = tf.losses.mean_squared_error(self.next_frames, pred_frames) + tf.losses.mean_squared_error(self.rewards, pred_rewards)
+		self.loss = config.loss_weight * tf.losses.mean_squared_error(self.next_frames, pred_frames) + (1 - config.loss_weight) * tf.losses.mean_squared_error(self.rewards, pred_rewards)
 		# self.loss = tf.Print(self.loss, [self.next_states, self.pred_state], summarize=15)
 
 		variables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, config.scope)
@@ -105,9 +105,11 @@ class EnvironmentModel(object):
 			# extract features
 			conv1 = layers.conv2d(x, 32, 8, stride=2)
 			conv2 = layers.conv2d(conv1, 32, 3)
-			conv3 = layers.conv2d(conv2, 32, 3)
+			conv3 = layers.conv2d(conv2, 32, 3, activation_fn=None)
+			conv3 = tf.nn.relu(conv3 + conv1)
 			conv4 = layers.conv2d(conv3, 32, 3)
-			encoded = conv2 + conv3 + conv4
+			conv5 = layers.conv2d(conv2, 32, 3, activation_fn=None)
+			encoded = tf.nn.relu(conv3 + conv5)
 
 			# predict state
 			pred_frame = layers.conv2d_transpose(encoded, 1, 8, stride=2, activation_fn=None)
@@ -118,8 +120,7 @@ class EnvironmentModel(object):
 			rconv2 = layers.conv2d(rpool1, 32, 3)
 			rpool2 = layers.max_pool2d(rconv1, 2, padding="same")
 			rpool2 = layers.flatten(rpool2)
-			rfc1 = layers.fully_connected(rpool2, 100)
-			pred_reward = layers.fully_connected(rfc1, 1, activation_fn=None)
+			pred_reward = layers.fully_connected(rpool2, 1, activation_fn = None)
 
 			return pred_frame, pred_reward
 
@@ -196,15 +197,16 @@ def run(sess, config, env):
 		sess.run(tf.local_variables_initializer())
 
 	# load dataset
-	states = np.load("./datasets/current_states.npy")[:256,:,:,:]
-	actions = np.load("./datasets/actions.npy")[:256,:]
-	rewards = np.expand_dims(np.load("./datasets/rewards.npy"), axis=1)[:256, :]
-	next_states = np.load("./datasets/next_states.npy")[:256,:,:,:]
+	states = np.load("./datasets/current_states.npy")
+	actions = np.load("./datasets/actions.npy")
+	rewards = np.expand_dims(np.load("./datasets/rewards.npy"), axis=1)
+	next_states = np.load("./datasets/next_states.npy")
 
 	train_states = states[:-config.batch_size, :, :, :]
 	train_actions = actions[:-config.batch_size, :]
 	train_rewards = rewards[:-config.batch_size, :]
 	train_next_states = next_states[:-config.batch_size, :, :, :]
+
 	s_mean = np.mean(train_states, axis=(0,3), keepdims=True)
 	train_states = (train_states - s_mean)/255.0
 	train_next_states = (train_next_states - s_mean)/255.0
@@ -245,12 +247,14 @@ def run(sess, config, env):
 		model.rewards_placeholder: test_rewards,
 		model.nf_placeholder: test_next_frames
 	})
+
 	pred_state, next_frames = model.predict()
 
 	save_path = saver.save(sess, config.save_ckpt)
 	print("Model saved in path: %s" % save_path)
 	np.save('../outputs/next_frames', next_frames * 255.0 + s_mean)
 	np.save('../outputs/preds', pred_state * 255.0 + s_mean)
+	np.save('../outputs/train_preds', curr_pred_state * 255.0 + s_mean)
 	np.save('../outputs/losses', losses)
 
 parser = argparse.ArgumentParser(description='A3C')

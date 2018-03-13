@@ -7,7 +7,7 @@ import tensorflow as tf
 from tensorflow.contrib.layers import conv2d, fully_connected
 import numpy as np
 
-from models import Policy, natureCNN, linear, dynamic_rnn
+from models import Policy, natureCNN, linear, dynamic_rnn, justCNN
 
 TEST = True
 
@@ -30,31 +30,32 @@ class ImaginationCore(object):
 		#		if init == False, then sample random actions for each rollout
 		#		use sess.run to retrieve actions from self.policy
 		#		make your own environment model and use it however you want!
-		if TEST:
-			return np.zeros(states.shape), np.zeros(states.shape[0])
 
-		# imagined_actions = None
-		# if init:
-		# 	imagined_actions = np.array(range(config.n_actions))
-		# else:
-		# 	imagined_actions = sess.run(
-		# 		[self.actions]
-		# 		feed_dict={
-		# 			self.states: states
-		# 		})
+		sess = tf.get_default_session()
+		imagined_actions = None
+		if init:
+			imagined_actions = np.array(range(config.n_actions))
+		else:
+			imagined_actions = 	sess.run(
+									self.actions,
+									feed_dict={
+										self.states: states
+									})
+		print(imagined_actions)
+		action_tile = np.zeros((config.n_actions, *config.frame_dims, config.n_actions))
+		for idx, act in enumerate(imagined_actions.tolist()):
+			action_tile[idx, :, :, act] = 1
+		stacked = np.concatenate([states, action_tile], axis=-1)
 
-		# action_tile = np.zeros((config.n_actions, *config.state_dims, config.n_actions))
-		# for idx, act in enumerate(imagined_actions.tolist()):
-		# 	action_tile[idx, :, :, act] = 1
-		# stacked = np.concatenate([states, action_tile], axis=-1)
+		imagined_next_states, imagined_rewards = sess.run(
+			[self.env_model.pred_state, self.env_model.pred_reward],
+			feed_dict={
+				self.env_model.x: stacked
+			})
 
-		# imagined_next_states, imagined_rewards = sess.run(
-		# 	[self.env_model.pred_state, self.env_model.pred_reward],
-		# 	feed_dict={
-		# 		self.env_model.x: stacked
-		# 	})
+		imagined_next_states = np.concatenate([states[:, :, :, :-1], imagined_next_states], axis=-1)
 
-		# return imagined_next_states, imagined_rewards
+		return imagined_next_states, imagined_rewards
 
 		# states dims: [n_actions, *state_dims]
 		# expected output dims: 
@@ -63,49 +64,77 @@ class ImaginationCore(object):
 
 class EnvironmentModel(object):
 	def __init__(self, config):
-		pass
+		#sess = tf.get_default_session()
+		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.channels + config.n_actions])
+		self.build_graph()
+		variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
+		saver = tf.train.Saver(variables_to_restore)
+		saver.restore(sess, "/Users/williamhang/Downloads/model12800_2res_100epochs.ckpt")
 
-########## END BRANDON'S SECTION ##########
+		# action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
+		# action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
+		# current_inputs = tf.concat([current_state, action_tile], axis=-1)
+		# pred_state = tf.concat([current_state[:, :, :, 1:config.n_stacked], pred_frame], axis=3)
 
-########## KEVIN'S SECTION ##########
+	def build_graph(self):
+		with tf.variable_scope('worker'):
+			# extract features
+			conv1 = layers.conv2d(self.x, 32, 8, stride=2)
+			conv2 = layers.conv2d(conv1, 32, 3)
+			conv3 = layers.conv2d(conv2, 32, 3, activation_fn=None)
+			conv3 = tf.nn.relu(conv3 + conv1)
+			conv4 = layers.conv2d(conv3, 32, 3)
+			conv5 = layers.conv2d(conv2, 32, 3, activation_fn=None)
+			encoded = tf.nn.relu(conv3 + conv5)
+
+			# predict state
+			self.pred_state = layers.conv2d_transpose(encoded, 1, 8, stride=2, activation_fn=None)
+
+			# predict reward
+			rconv1 = layers.conv2d(encoded, 32, 3)
+			rpool1 = layers.max_pool2d(rconv1, 2)
+			rconv2 = layers.conv2d(rpool1, 32, 3)
+			rpool2 = layers.max_pool2d(rconv1, 2, padding="same")
+			rpool2 = layers.flatten(rpool2)
+			self.pred_reward = layers.fully_connected(rpool2, 1, activation_fn = None)
 
 class Encoder(object):
-	def __init__(self, stem, config, scope):
+	def __init__(self, stem, config):
 		self.stem = stem
 		self.config = config
-		self.scope = scope
-
-	# TODO: i give you a list of states and rewards, and you do an encoding in the reverse order
-	#		since this is part of the computation graph, you need to define the inputs to this class as tf.placeholder instead of
-	#			function parameters. you also can't return anything, you need to store the result in the object
 
 	# states dims: [-1, n_actions, rollout_length, *state_dims]
 	# reward dims: [-1, n_actions, rollout_length]
 	# expected output dims:
 	# 	encodings: [n_actions, hidden_dim]
-	def forward(self, x):
+	def forward(self, x, r):
 		# compress this so that we have [bsz, *state_dims]
 		x = tf.reshape(x, [-1] + config.state_dims)
 		feats = self.stem(x)
-		# reshape so that we get [bsz * n_actions, rollout_length, 512]
-		print(feats)
-		feats = tf.reshape(feats, [-1, self.config.rollout_length, 512])
+		# now feats is something like [bsz, 11, 11, 64]
+		# we need to generate a reward tensor that is [bsz, 11, 11, 1] and concat this with feats
+		# sorry, what you are about to see really sucks
+		r = tf.reshape(r, [-1])
+		r = tf.tile(r, [121])
+		r = tf.reshape(r, [121, -1])
+		r = tf.transpose(r)
+		r = tf.reshape(r, [-1, 11, 11, 1])
+		# stick feats and r together!
+		feats = tf.concat([feats, r], -1)
+		# feats should be [-1, 11, 11, 65] right now
+		feats = layers.flatten(feats)
+		# reshape so that we get [bsz * n_actions, rollout_length, 7865]
+		# 7865 because we are flattening the tensor
+		feats = tf.reshape(feats, [-1, self.config.rollout_length, 7865])
 		# return feats
 		outputs, state = dynamic_rnn(self.config.lstm_layers, feats, self.config.hidden_dim)
-		state = state[0][-1]
+		state = state[-1][-1]
 		state = tf.reshape(state, [-1, self.config.n_actions, self.config.hidden_dim])
 		return state
-		##feats = tf.reshape(x, [-1, config.n_actions, config.rollout_length])
 
-########## END KEVIN'S SECTION ##########
 class I2A(object):
 	def __init__(self, config):
 		self.config = config
-		self.encoder = Encoder(natureCNN, config, 'encoder')
-		self.mf_policy = Policy(natureCNN, config, 'mf_policy')
-		# TODO: write the linear policy function class
-		self.i2a_policy = Policy(linear, config, 'i2a_policy')
-		self.rollout_policy = Policy(natureCNN, config, 'rollout_policy')
 		# for universe-starter-agent
 		self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
 		# build some graph nodes
@@ -113,36 +142,49 @@ class I2A(object):
 		self.inputs_r = tf.placeholder(tf.float32, [None] + [config.n_actions, config.rollout_length])
 		self.x = tf.placeholder(tf.float32, [None] + config.state_dims)
 
+		# instantiate the model free policy
+		self.mf_policy = justCNN
+		with tf.variable_scope('mf_policy', reuse=False):
+			mf_feats = self.mf_policy(self.x)
+			mf_feats = layers.flatten(mf_feats)
+		# instantiate the rollout policy
+		self.rollout_policy = Policy(natureCNN, config)
 		with tf.variable_scope('rollout_policy', reuse=False):
 			self.rp_logits, rp_pi, rp_actions, rp_vf = self.rollout_policy.forward(self.x)
-
+		# instantiate the imagination core
+		# we can only instantiate this once we have defined our rollout policy
 		self.imagination_core = ImaginationCore(config, self.rollout_policy)
-
+		# instantiate the encoder
+		self.encoder = Encoder(justCNN, config)
 		with tf.variable_scope('encoder', reuse=False):
-			encodings = self.encoder.forward(self.inputs_s)
-		with tf.variable_scope('mf_policy', reuse=False):
-			mf_logits, _, _, _ = self.mf_policy.forward(self.x)
-
+			encodings = self.encoder.forward(self.inputs_s, self.inputs_r)
 		aggregate = tf.reshape(encodings, shape=[-1, config.n_actions * config.hidden_dim])
 		# we can experiment with this next line of code
 		# you can either concat, add, or multiply
-		i2a_inputs = tf.concat([aggregate, mf_logits], -1)
-		
+		i2a_inputs = tf.concat([aggregate, mf_feats], -1)
+		# instantiate the I2A policy
+		self.i2a_policy = Policy(linear, config)
 		with tf.variable_scope('i2a_policy', reuse=False):
 			self.logits, self.pi, self.actions, self.vf = self.i2a_policy.forward(i2a_inputs)
 
-		self.var_list = []
-
-		# you need to do these things:
-		# 	make sure that the rollout policy is defined in i2a and passed into imagination core
+		# TODO:
 		#		during training, run actions through the rollout policy and set the loss to negative log likelihood with
-		#		the i2a policy
+		#		the i2a policy in order to keep the KL between rollout nad i2a policy small
+		#
+		# 		the reason we define a separate rollout policy and pass it into the env model rather than contain
+		#		it within the env model is that we also want to directly pass states through the rollout model during
+		#		training
 
 	def act(self, state):
 		# i2a gets a 1-batch of states
 		# [1, 84, 84, 4]
+		sess = tf.get_default_session()
 		rollouts_s, rollouts_r = self.rollout(state)
-
+		# we should get something that is
+		# rollouts_s: [n_actions, rollout_length, 84, 84, 4]
+		# rollouts_r: [n_actions, rollout_length]
+		rollouts_s = np.expand_dims(rollouts_s, axis=0)
+		rollouts_r = np.expand_dims(rollouts_r, axis=0)
 		logits, pi, actions, vf = sess.run(
 			[self.logits, self.pi, self.actions, self.vf],
 			feed_dict={
@@ -156,11 +198,12 @@ class I2A(object):
 	def rollout(self, state):
 		# initialize state for batch rollouts
 		# this is of shape [n_actions, 84, 84, 4]
-		states = np.stack([state] * self.config.n_actions, axis=0)
+		config = self.config
+		states = np.concatenate([state] * config.n_actions, axis=0)
 		# roll everything out and put it in a placeholder
 		rollouts_s = []
 		rollouts_r = []
-		for i in range(self.config.rollout_length):
+		for i in range(config.rollout_length):
 			# on the first timestep, each rollout will take its own action
 			# afterwards, each rollout will take randomly sampled actions
 			next_states, rewards = self.imagination_core.predict(states, init=i == 0)
@@ -170,40 +213,48 @@ class I2A(object):
 			# advance
 			states = next_states
 		# you now have something of [rollout_length, n_actions, 84, 84, 4]
-		rollouts_s = np.transpose(rollouts_s, (2, 1, 0, 3, 4, 5))
-		rollouts_r = np.transpose(np.expand_dims(rollouts_r, 0), (0, 2, 1))
-		print(rollouts_s.shape)
+		rollouts_s = np.array(rollouts_s)
+		rollouts_r = np.array(rollouts_r).reshape(config.rollout_length, config.n_actions)
+		print(rollouts_s.shape, rollouts_r.shape)
+		rollouts_s = np.transpose(rollouts_s, (1, 0, 2, 3, 4))
+		rollouts_r = np.transpose(rollouts_r, (1, 0))
 		return rollouts_s, rollouts_r
 
 # ###### TEST CODE
 class config():
 	n_actions = 6
 	state_dims = [84, 84, 4]
-	rollout_length = 15
-	hidden_dim = 64
-	lstm_layers = 3
+	channels = 4
+	frame_dims = [84, 84]
+	rollout_length = 3
+	hidden_dim = 512
+	lstm_layers = 1
 
 config = config()
 
-##### VALIDITY TEST #######
-# i2a = I2A(config)
+# ##### VALIDITY TEST #######
+i2a = I2A(config)
 
-# real_rewards = tf.placeholder(tf.float32, [None])
+real_rewards = tf.placeholder(tf.float32, [None])
 
-# aux_policy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=i2a.actions, logits=i2a.rp_logits)
-# loss = tf.losses.mean_squared_error(real_rewards, i2a.vf) #+ aux_policy_loss
-# opt = tf.train.AdamOptimizer(learning_rate=1e-3)
-# train_op = opt.minimize(loss)
+aux_policy_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=i2a.actions, logits=i2a.rp_logits)
+loss = tf.losses.mean_squared_error(real_rewards, i2a.vf) #+ aux_policy_loss
+opt = tf.train.AdamOptimizer(learning_rate=1e-3)
+train_op = opt.minimize(loss)
 
-# sess.run(tf.global_variables_initializer())
-# sess.run(tf.local_variables_initializer())
+sess.run(tf.global_variables_initializer())
+sess.run(tf.local_variables_initializer())
+
+state = np.random.random((1, 84, 84, 4))
+with sess:
+	print(i2a.act(state))
 
 # for i in range(64):
 # 	rand1 = 4#np.random.random()
 # 	rand2 = 4#np.random.random()
 # 	state = np.ones((32, 84, 84, 4)) * rand1
-# 	rollouts_s = np.ones((32, 6, 15, 84, 84, 4)) * 2 * rand1
-# 	rollouts_r = np.ones((32, 6, 15)) * 3 * rand2
+# 	rollouts_s = np.ones((32, 6, 3, 84, 84, 4)) * 2 * rand1
+# 	rollouts_r = np.ones((32, 6, 3)) * 3 * rand2
 # 	rewards = np.ones((32)) * rand1 * rand2 * 10
 
 # 	_, l = sess.run(
@@ -219,8 +270,8 @@ config = config()
 # rand1 = 4#np.random.random()
 # rand2 = 4#np.random.random()
 # state = np.ones((32, 84, 84, 4)) * rand1
-# rollouts_s = np.ones((32, 6, 15, 84, 84, 4)) * 2 * rand1
-# rollouts_r = np.ones((32, 6, 15)) * 3 * rand2
+# rollouts_s = np.ones((32, 6, 3, 84, 84, 4)) * 2 * rand1
+# rollouts_r = np.ones((32, 6, 3)) * 3 * rand2
 # rewards = np.ones((32)) * rand1 * rand2 * 10
 
 # vf, l = sess.run(
@@ -235,61 +286,58 @@ config = config()
 # print(vf, l)
 
 ######## ENCODER TEMPORAL AND ACTION SPACE DEPENDENCY TEST######
-inputs = tf.placeholder(tf.float32, [None] + [config.n_actions, config.rollout_length] + config.state_dims)
-labels = tf.placeholder(tf.float32, [None, config.n_actions, 64])
+# inputs = tf.placeholder(tf.float32, [None] + [config.n_actions, config.rollout_length] + config.state_dims)
+# labels = tf.placeholder(tf.float32, [None, config.n_actions, 64])
 
-encoder = Encoder(natureCNN, config, 'haha')
-with tf.variable_scope('haha'):
-	pred = encoder.forward(inputs)
+# encoder = Encoder(natureCNN, config, 'haha')
+# with tf.variable_scope('haha'):
+# 	pred = encoder.forward(inputs)
 
-loss = tf.losses.mean_squared_error(labels, pred)
-opt = tf.train.AdamOptimizer(learning_rate=2e-3)
-train_op = opt.minimize(loss)
+# loss = tf.losses.mean_squared_error(labels, pred)
+# opt = tf.train.AdamOptimizer(learning_rate=2e-3)
+# train_op = opt.minimize(loss)
 
-sess.run(tf.global_variables_initializer())
-sess.run(tf.local_variables_initializer())
+# sess.run(tf.global_variables_initializer())
+# sess.run(tf.local_variables_initializer())
 
-for k in range(32):
-	x = np.ones((32, 6, 15, 84, 84, 4))
-	# truth = np.ones((192, 15, 512)) * 3
-	truth = np.ones((32, config.n_actions, config.hidden_dim)) * 5
-	# for i in range(15):
-	# # for i in range(6):
-	# 	truth[:, i, :] = i
-	l, _, p = sess.run(
-		[loss, train_op, pred],
-		feed_dict={
-			inputs: x,
-			labels: truth
-		})
-	print(np.mean(p, axis=(0, 2)).tolist())
-	print(l)
+# for k in range(32):
+# 	x = np.ones((32, 6, 15, 84, 84, 4))
+# 	# truth = np.ones((192, 15, 512)) * 3
+# 	truth = np.ones((32, config.n_actions, config.hidden_dim)) * 5
+# 	# for i in range(15):
+# 	# # for i in range(6):
+# 	# 	truth[:, i, :] = i
+# 	l, _, p = sess.run(
+# 		[loss, train_op, pred],
+# 		feed_dict={
+# 			inputs: x,
+# 			labels: truth
+# 		})
+# 	print(np.mean(p, axis=(0, 2)).tolist())
+# 	print(l)
 
-x = np.ones((1, 6, 15, 84, 84, 4))
+# x = np.ones((1, 6, 15, 84, 84, 4))
+# # for i in range(15):
+# for i in range(6):
+# 	# x[:, :, :, :, :, :] = i * 3
+# 	x[:, i, :, :, :, :] = i * 0.1
+# p = sess.run(
+# 	[pred],
+# 	feed_dict={
+# 		inputs: x
+# 	})[0]
+
+# print(np.mean(p, axis=(0, 2)).tolist())
+
+# x = np.ones((1, 6, 15, 84, 84, 4))
+# # for i in range(15):
 # for i in range(15):
-for i in range(6):
-	# x[:, :, :, :, :, :] = i * 3
-	x[:, i, :, :, :, :] = i * 0.1
-p = sess.run(
-	[pred],
-	feed_dict={
-		inputs: x
-	})[0]
+# 	x[:, :, i, :, :, :] = i * 0.1
+# 	# x[:, i, :, :, :, :] = i
+# p = sess.run(
+# 	[pred],
+# 	feed_dict={
+# 		inputs: x
+# 	})[0]
 
-print(np.mean(p, axis=(0, 2)).tolist())
-
-x = np.ones((1, 6, 15, 84, 84, 4))
-# for i in range(15):
-for i in range(15):
-	x[:, :, i, :, :, :] = i * 0.1
-	# x[:, i, :, :, :, :] = i
-p = sess.run(
-	[pred],
-	feed_dict={
-		inputs: x
-	})[0]
-
-print(np.mean(p, axis=(0, 2)).tolist())
-
-
-
+# print(np.mean(p, axis=(0, 2)).tolist())

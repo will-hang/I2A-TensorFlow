@@ -1,7 +1,9 @@
 import tensorflow as tf
 import sys, time
 import numpy as np
-from model import LSTMPolicy
+from policies import CnnPolicy
+from baselines.common.vec_env.vec_frame_stack import VecFrameStack
+from baselines.common.cmd_util import make_atari_env
 
 # role = sys.argv[1]
 # cluster = tf.train.ClusterSpec({"ps": ["localhost:8000"], "worker": ["localhost:8001"]})
@@ -36,26 +38,20 @@ tf.reset_default_graph()
 sess = tf.Session()
 
 class Actor():
-	def __init__(self, config):
-		self.config = config
+	def __init__(self, ob_space, ac_space, n_batch, n_steps):
 		with tf.variable_scope("global"):
-			self.network = LSTMPolicy([42, 42, 1], 6)
+			self.network = CnnPolicy(sess, ob_space, ac_space, n_batch, n_steps)
 			saver = tf.train.Saver()
-			saver.restore(sess, "/tmp/pong/train/model.ckpt-3244615")
-		self.last_features = self.network.get_initial_features()
+			saver.restore(sess, "./checkpoints/model.ckpt")
 
 	def act(self, state):
-		assert state.shape == (42, 42, 1)
-		stuff = self.network.act(state, *self.last_features)
-		action, value_, features = stuff[0], stuff[1], stuff[2:]
-		self.last_features = features
+		stuff = self.network.step(state)
+		action, value_, _, _= stuff[0], stuff[1], stuff[2:]
 		return action, value_
 
-	def reset(self):
-		self.last_features = self.network.get_initial_features()
-
-actor = Actor(4)
+env = VecFrameStack(make_atari_env('PongNoFrameskip-v4', 1, 123), 4)
+ob_space = env.observation_space
+ac_space = env.action_space
+actor = Actor(ob_space, ac_space, 32, 1)
 with sess:
-	print(actor.act(np.ones((42, 42, 1))))
-	print(actor.act(np.ones((42, 42, 1))))
-	print(actor.act(np.ones((42, 42, 1))))
+	print(actor.act(np.ones((32, 84, 84, 4))))
