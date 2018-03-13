@@ -50,8 +50,8 @@ class Actor():
 		return action, value_
 
 env = VecFrameStack(make_atari_env('PongNoFrameskip-v4', 1, 123), 4)
-ob_space = self.env.observation_space
-ac_space = self.env.action_space
+ob_space = env.observation_space
+ac_space = env.action_space
 actor = Actor(ob_space, ac_space, 32, 1)
 with sess:
 	print(actor.act(np.ones((32, 84, 84, 4))))

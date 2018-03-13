@@ -21,11 +21,17 @@ def natureCNN(images):
 	# return a 512 dimensional embedding
 	return hidden_1
 
+def justCNN(images):
+	# we apply the basic Nature feature extractor
+	conv1_1 = conv2d(images, 32, 8, stride=4)
+	conv2_1 = conv2d(conv1_1, 64, 4, stride=2)
+	conv3_1 = conv2d(conv2_1, 64, 3, stride=1)
+	# return a 512 dimensional embedding
+	return conv3_1
+
 def linear(inputs):
-	hidden1 = layers.fully_connected(inputs, 256)
-	hidden2 = layers.fully_connected(hidden1, 256)
-	hidden3 = layers.fully_connected(hidden2, 128)
-	return hidden3
+	hidden1 = layers.fully_connected(inputs, 512)
+	return hidden1
 
 def lstm_cell(hidden_dim):
 	return tf.contrib.rnn.BasicLSTMCell(hidden_dim)
@@ -39,22 +45,21 @@ def dynamic_rnn(layers, data, hidden_dim):
 	return outputs, state
 
 class Policy():
-	def __init__(self, stem, config, scope):
+	def __init__(self, stem, config):
 		self.stem = stem
 		self.config = config
-		self.scope = scope
 
 	def forward(self, x):
-			features = self.stem(x)
-			features = layers.flatten(features)
-			logits = fully_connected(features, self.config.n_actions,
-				activation_fn=None,
-				weights_initializer=normalized_columns_initializer(0.01),
-				biases_initializer=None)
-			pi = nn.softmax(logits)
-			actions = tf.squeeze(tf.multinomial(logits, 1))
-			vf = tf.squeeze(fully_connected(features, 1, 
-				activation_fn=None,
-				weights_initializer=normalized_columns_initializer(1.0),
-				biases_initializer=None))
-			return logits, pi, actions, vf
+		features = self.stem(x)
+		features = layers.flatten(features)
+		logits = fully_connected(features, self.config.n_actions,
+			activation_fn=None,
+			weights_initializer=normalized_columns_initializer(0.01),
+			biases_initializer=None)
+		pi = nn.softmax(logits)
+		actions = tf.squeeze(tf.multinomial(logits, 1))
+		vf = tf.squeeze(fully_connected(features, 1, 
+			activation_fn=None,
+			weights_initializer=normalized_columns_initializer(1.0),
+			biases_initializer=None))
+		return logits, pi, actions, vf

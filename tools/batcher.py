@@ -3,7 +3,7 @@ import argparse
 
 import scipy
 import tensorflow as tf
-from model import LSTMPolicy
+from policies import CnnPolicy
 
 import cv2
 
