@@ -36,14 +36,13 @@ class Batcher():
 	def create_dataset(self, num_iter):
 		self.num_iter = num_iter
 		state = self.env.reset()
-		self.actor.reset()
 		for i in range(num_iter):
 			if(i%100==0):
 				print("Iteration: {}".format(i))
 				# cv2.imshow("State 0",scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))
 				# cv2.waitKey(0)
 
-			action = [self.actor.act(scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))[0]]
+			action = [self.actor.act(state)]
 			next_state, reward, done, info = self.env.step(action)
 			try:
 				states
@@ -97,25 +96,16 @@ class Batcher():
 				)
 
 class Actor():
-	def __init__(self, config):
-		self.config = config
+	def __init__(self, ob_space, ac_space, n_batch, n_steps):
 		with tf.variable_scope("global"):
-			self.network = LSTMPolicy([42, 42, 1], 6)
+			self.network = CnnPolicy(sess, ob_space, ac_space, n_batch, n_steps)
 			saver = tf.train.Saver()
-			saver.restore(sess, "/Users/kevinyang/Desktop/pong/model.ckpt-3369941")
-		self.last_features = self.network.get_initial_features()
+			saver.restore(sess, "./checkpoints/model.ckpt")
 
 	def act(self, state):
-		state = state[:, :, -1]
-		state = state.reshape([42,42,1])
-		assert state.shape == (42, 42, 1)
-		stuff = self.network.act(state, *self.last_features)
-		action, value_, features = stuff[0], stuff[1], stuff[2:]
-		self.last_features = features
-		return np.argmax(action), value_
-
-	def reset(self):
-		self.last_features = self.network.get_initial_features()
+		stuff = self.network.step(state)
+		action, value_, _, _= stuff[0], stuff[1], stuff[2:]
+		return action, value_
 
 
 parser = argparse.ArgumentParser(description='A3C')
@@ -157,9 +147,8 @@ if __name__ == '__main__':
 	config.n_actions = int(env.action_space.n)
 	config.scope = 'worker'
 
-	with sess:
-		batcher = Batcher(env, actor)
-		batcher.create_dataset(3200)
+	batcher = Batcher(env, actor)
+	batcher.create_dataset(3200)
 
 		# generator = batcher.data_generator()
 		# # while True:
