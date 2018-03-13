@@ -42,12 +42,22 @@ def show_images(images, cols = 1, titles = None):
 	plt.show()
 
 class EnvironmentModel(object):
-	def __init__(self, config, iterator):
-		# self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
-		# self.actions = tf.placeholder(tf.int32, [None, config.n_steps])
-		# self.next_frames = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_steps])
-		# self.rewards = tf.placeholder(tf.float32, [None, config.n_steps])
-		it_dict = iterator.get_next()
+	def __init__(self, config):
+		self.states_placeholder = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
+		self.actions_placeholder = tf.placeholder(tf.int32, [None, config.n_steps])
+		self.nf_placeholder = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_steps])
+		self.rewards_placeholder = tf.placeholder(tf.float32, [None, config.n_steps])
+
+		dataset = tf.data.Dataset.from_tensor_slices({
+			"states": self.states_placeholder,
+			"actions": self.actions_placeholder,
+			"rewards": self.rewards_placeholder,
+			"next_frames": self.nf_placeholder
+		})
+		dataset = dataset.shuffle(config.seed).repeat(config.num_epochs).batch(config.batch_size)
+		self.iterator = dataset.make_initializable_iterator()
+		it_dict = self.iterator.get_next()
+
 		self.states = it_dict["states"]
 		self.actions = it_dict["actions"]
 		self.rewards = it_dict["rewards"]
@@ -114,8 +124,8 @@ class EnvironmentModel(object):
 			return pred_frame, pred_reward
 
 	def predict(self):
-		pred_state = sess.run([self.pred_state])[0]
-		return pred_state
+		pred_state, next_frames = sess.run([self.pred_state, self.next_frames])
+		return pred_state, next_frames
 
 	def train(self):
 		loss, pred_state, pred_reward, _ = sess.run([self.loss, self.pred_state, self.pred_reward, self.train_op])
@@ -176,24 +186,7 @@ class Worker():
 def run(sess, config, env):
 	worker = Worker(config, env)
 
-	curr_pred_state = None
-	losses = []
-
-	states_placeholder = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_stacked])
-	actions_placeholder = tf.placeholder(tf.int32, [None, config.n_steps])
-	nf_placeholder = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.n_steps])
-	rewards_placeholder = tf.placeholder(tf.float32, [None, config.n_steps])
-
-	dataset = tf.data.Dataset.from_tensor_slices({
-		"states": states_placeholder,
-		"actions": actions_placeholder,
-		"rewards": rewards_placeholder,
-		"next_frames": nf_placeholder
-	})
-	dataset = dataset.shuffle(config.seed).repeat(config.num_epochs).batch(config.batch_size)
-	iterator = dataset.make_initializable_iterator()
-
-	model = EnvironmentModel(config, iterator)
+	model = EnvironmentModel(config)
 	saver = tf.train.Saver()
 	if config.load_ckpt:
 		saver.restore(sess, config.load_ckpt)
@@ -202,19 +195,36 @@ def run(sess, config, env):
 		sess.run(tf.global_variables_initializer())
 		sess.run(tf.local_variables_initializer())
 
-	# train loop
-	train_states, train_actions, train_rewards, train_next_states = worker.get_batch(config.data_size, config.n_steps)
-	print(train_rewards)
-	s_mean = np.mean(train_states, axis=0, keepdims=True)
+	# load dataset
+	states = np.load("./datasets/current_states.npy")[:256,:,:,:]
+	actions = np.load("./datasets/actions.npy")[:256,:]
+	rewards = np.expand_dims(np.load("./datasets/rewards.npy"), axis=1)[:256, :]
+	next_states = np.load("./datasets/next_states.npy")[:256,:,:,:]
+
+	train_states = states[:-config.batch_size, :, :, :]
+	train_actions = actions[:-config.batch_size, :]
+	train_rewards = rewards[:-config.batch_size, :]
+	train_next_states = next_states[:-config.batch_size, :, :, :]
+	s_mean = np.mean(train_states, axis=(0,3), keepdims=True)
 	train_states = (train_states - s_mean)/255.0
 	train_next_states = (train_next_states - s_mean)/255.0
 	train_next_frames = np.expand_dims(train_next_states[:, :, :, config.n_stacked-1], axis=3)
 
-	sess.run(iterator.initializer, feed_dict={
-		states_placeholder: train_states,
-		actions_placeholder: train_actions,
-		rewards_placeholder: train_rewards,
-		nf_placeholder: train_next_frames
+	test_states = states[-config.batch_size:, :, :, :]
+	test_actions = actions[-config.batch_size:, :]
+	test_rewards = rewards[-config.batch_size:, :]
+	test_next_states = next_states[-config.batch_size:, :, :, :]
+
+	test_states = (test_states - s_mean)/255.0
+	test_next_states = (test_next_states - s_mean)/255.0
+	test_next_frames = np.expand_dims(test_next_states[:, :, :, config.n_stacked-1], axis=3)
+
+	# train loop
+	sess.run(model.iterator.initializer, feed_dict={
+		model.states_placeholder: train_states,
+		model.actions_placeholder: train_actions,
+		model.rewards_placeholder: train_rewards,
+		model.nf_placeholder: train_next_frames
 	})
 
 	losses = []
@@ -223,30 +233,23 @@ def run(sess, config, env):
 		train_steps += 1
 		try:
 			loss, pred_state, pred_reward = model.train()
-			print(pred_reward)
 			losses.append(loss)
 			print('Train Step {}: Loss {}'.format(train_steps, loss))
 		except tf.errors.OutOfRangeError:
 			break
 
 	# test loop
-	test_states, test_actions, test_rewards, test_next_states = worker.get_batch(config.batch_size, config.n_steps)
-	test_states = (test_states - s_mean)/255.0
-	test_next_states = (test_next_states - s_mean)/255.0
-	test_next_frames = np.expand_dims(test_next_states[:, :, :, config.n_stacked-1], axis=3)
-
-	sess.run(iterator.initializer, feed_dict={
-		states_placeholder: test_states,
-		actions_placeholder: test_actions,
-		rewards_placeholder: test_rewards,
-		nf_placeholder: test_next_frames
+	sess.run(model.iterator.initializer, feed_dict={
+		model.states_placeholder: test_states,
+		model.actions_placeholder: test_actions,
+		model.rewards_placeholder: test_rewards,
+		model.nf_placeholder: test_next_frames
 	})
-	pred_state = model.predict()
+	pred_state, next_frames = model.predict()
 
 	save_path = saver.save(sess, config.save_ckpt)
 	print("Model saved in path: %s" % save_path)
-	# np.save('../outputs/states', test_states * 255.0 + s_mean)
-	# np.save('../outputs/next_states', test_next_states * 255.0 + s_mean)
+	np.save('../outputs/next_frames', next_frames * 255.0 + s_mean)
 	np.save('../outputs/preds', pred_state * 255.0 + s_mean)
 	np.save('../outputs/losses', losses)
 
@@ -263,8 +266,6 @@ parser.add_argument('--reuse', type=bool, default=False,
                     help='policy architecture')
 parser.add_argument('--batch_size', type=int, default=128,
                     help='batch size')
-parser.add_argument('--data_size', type=int, default=256,
-                    help='dataset size')
 parser.add_argument('--num_epochs', type=int, default=10,
                     help='number of training epochs')
 parser.add_argument('--normalize_adv', type=bool, default=True,
