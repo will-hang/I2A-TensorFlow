@@ -29,13 +29,14 @@ class Config():
     lstm_layers = 1
     reuse = False
     # filename must end in .ckpt. do not attempt to specify an actual file here
-    ckpt_file = "/home/cs234/env_model/model_pretrained_150epochs.ckpt" # this is an example
+    ckpt_file = "/Users/williamhang/Downloads/env_model/model_pretrained_150epochs.ckpt"#"/home/cs234/env_model/model_pretrained_150epochs.ckpt" # this is an example
+    frame_mean_path = "/Users/williamhang/Downloads/s_mean.npy"
 
 class Model(object):
 
     def __init__(self, policy, ob_space, ac_space, nenvs, nsteps,
             ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, lr=7e-4,
-            alpha=0.99, epsilon=1e-5, total_timesteps=int(80e6), lrschedule='linear'):
+            alpha=0.99, epsilon=1e-5, lambda_dist=0.5, total_timesteps=int(80e6), lrschedule='linear'):
 
         sess = tf.get_default_session()
         nact = ac_space.n
@@ -52,11 +53,13 @@ class Model(object):
         config.reuse = True
         train_model = policy(config)
 
-        neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.pi, labels=A)
+        neglogpac = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.logits, labels=A)
         pg_loss = tf.reduce_mean(ADV * neglogpac)
         vf_loss = tf.reduce_mean(mse(tf.squeeze(train_model.vf), R))
-        entropy = tf.reduce_mean(cat_entropy(train_model.pi))
-        loss = pg_loss - entropy*ent_coef + vf_loss * vf_coef
+        entropy = tf.reduce_mean(cat_entropy(train_model.logits))
+
+        aux_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=train_model.rp_logits, labels=A)
+        loss = pg_loss - entropy * ent_coef + vf_loss * vf_coef + aux_loss * lambda_dist
 
         params = find_trainable_variables("model")
         grads = tf.gradients(loss, params)

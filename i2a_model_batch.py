@@ -18,6 +18,7 @@ class ImaginationCore(object):
 	def __init__(self, config, policy):
 		self.policy = policy
 		self.config = config
+		self.frame_mean = np.load(config.frame_mean_path)
 		# you need to make the EnvironmentModel class
 		self.env_model = EnvironmentModel(config)
 
@@ -51,7 +52,9 @@ class ImaginationCore(object):
 		action_tile = np.zeros((flat_bsz, *config.frame_dims, config.n_actions))
 		for idx, act in enumerate(imagined_actions.tolist()):
 			action_tile[idx, :, :, act] = 1
-		stacked = np.concatenate([states, action_tile], axis=-1)
+
+		states_ = (states - self.frame_mean) / 255.
+		stacked = np.concatenate([states_, action_tile], axis=-1)
 
 		imagined_next_states, imagined_rewards = sess.run(
 			[self.env_model.pred_state, self.env_model.pred_reward],
@@ -59,7 +62,8 @@ class ImaginationCore(object):
 				self.env_model.x: stacked
 			})
 
-		imagined_next_states = np.concatenate([states[:, :, :, :-1], imagined_next_states], axis=-1)
+		imagined_next_states = imagined_next_states * 255. + self.frame_mean
+		imagined_next_states = np.concatenate([states[:, :, :, 1:], imagined_next_states], axis=-1)
 		imagined_next_states = imagined_next_states.reshape(bsz, config.n_actions, 84, 84, 4)
 		imagined_rewards = imagined_rewards.reshape(bsz, config.n_actions)
 
