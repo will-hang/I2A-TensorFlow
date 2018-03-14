@@ -4,3 +4,5 @@ ckpts/*
 results/*
 checkpoints/*
 tools/tmp/*
+env_model/output.txt
+env_model/datasets/*

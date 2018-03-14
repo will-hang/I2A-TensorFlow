@@ -254,7 +254,6 @@ def run(sess, config, env):
 	print("Model saved in path: %s" % save_path)
 	np.save('../outputs/next_frames', next_frames * 255.0 + s_mean)
 	np.save('../outputs/preds', pred_state * 255.0 + s_mean)
-	np.save('../outputs/train_preds', curr_pred_state * 255.0 + s_mean)
 	np.save('../outputs/losses', losses)
 
 parser = argparse.ArgumentParser(description='A3C')
@@ -278,8 +277,6 @@ parser.add_argument('--seed', type=int, default=123,
                 	help='random seed')
 parser.add_argument('--loss_weight', type=float, default=0.9,
                 	help='environment loss weighting')
-parser.add_argument('--total_updates', type=int, default=30000,
-                	help='total number of updates')
 parser.add_argument('--n_steps', type=int, default=1,
 					help='use n-step loss for training')
 parser.add_argument('--load_ckpt', type=str, default=None,
