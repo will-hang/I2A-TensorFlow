@@ -91,11 +91,11 @@ class EnvironmentModel(object):
 		self.config = config
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.channels + config.n_actions])
 		self.build_graph()
-		# if not config.reuse:
-		# 	variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
-		# 	saver = tf.train.Saver(variables_to_restore)
-		# 	saver.restore(sess, config.ckpt_file)
-		# 	print(variables_to_restore)
+		if not config.reuse:
+			variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
+			saver = tf.train.Saver(variables_to_restore)
+			saver.restore(sess, config.ckpt_file)
+			print(variables_to_restore)
 
 		# action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
 		# action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
