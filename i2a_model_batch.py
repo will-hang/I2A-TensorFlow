@@ -63,6 +63,7 @@ class ImaginationCore(object):
 			})
 
 		imagined_next_states = imagined_next_states * 255. + self.frame_mean
+		np.save('results/imagined_next_states.npy', imagined_next_states)
 		imagined_next_states = np.concatenate([states[:, :, :, 1:], imagined_next_states], axis=-1)
 		imagined_next_states = imagined_next_states.reshape(bsz, config.n_actions, 84, 84, 4)
 		imagined_rewards = imagined_rewards.reshape(bsz, config.n_actions)
