@@ -26,6 +26,8 @@ class Config():
     hidden_dim = 512
     lstm_layers = 1
     reuse = False
+    # filename must end in .ckpt. do not attempt to specify an actual file here
+    ckpt_file = "/Users/williamhang/Downloads/model12800_2res_100epochs.ckpt" # this is an example
 
 class Model(object):
 

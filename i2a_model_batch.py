@@ -78,7 +78,7 @@ class EnvironmentModel(object):
 		self.build_graph()
 		variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
 		saver = tf.train.Saver(variables_to_restore)
-		saver.restore(sess, "/Users/williamhang/Downloads/model12800_2res_100epochs.ckpt")
+		saver.restore(sess, config.ckpt_file)
 
 		# action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
 		# action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
