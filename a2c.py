@@ -24,7 +24,7 @@ class Config():
     state_dims = [84, 84, 4]
     channels = 4
     frame_dims = [84, 84]
-    rollout_length = 5
+    rollout_length = 3
     hidden_dim = 512
     lstm_layers = 1
     reuse = False

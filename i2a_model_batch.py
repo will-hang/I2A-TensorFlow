@@ -6,7 +6,7 @@ from tensorflow import nn
 import tensorflow as tf
 from tensorflow.contrib.layers import conv2d, fully_connected
 import numpy as np
-
+import matplotlib.pyplot as plt
 from models import Policy, natureCNN, linear, dynamic_rnn, justCNN
 
 # TEST = True
@@ -62,8 +62,18 @@ class ImaginationCore(object):
 				self.env_model.x: stacked
 			})
 
+		plt.imshow(states[-1].squeeze().astype(np.uint8), cmap='Greys_r', vmin=0, vmax=255)
+		plt.show()
+		# plt.imshow(imagined_next_states[-1].squeeze().astype(np.uint8), cmap='Greys_r')
+		# plt.show()
+		# if init:
+			# np.save('results/states.npy', states)
+			# np.save('results/imagined_next_states_.npy', imagined_next_states * 255)
 		imagined_next_states = imagined_next_states * 255. + self.frame_mean
-		np.save('results/imagined_next_states.npy', imagined_next_states)
+
+		plt.imshow(imagined_next_states[-1].squeeze().astype(np.uint8), cmap='Greys_r', vmin=0, vmax=255)
+		plt.show()
+		
 		imagined_next_states = np.concatenate([states[:, :, :, 1:], imagined_next_states], axis=-1)
 		imagined_next_states = imagined_next_states.reshape(bsz, config.n_actions, 84, 84, 4)
 		imagined_rewards = imagined_rewards.reshape(bsz, config.n_actions)
@@ -81,9 +91,11 @@ class EnvironmentModel(object):
 		self.config = config
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.channels + config.n_actions])
 		self.build_graph()
-		variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
-		saver = tf.train.Saver(variables_to_restore)
-		saver.restore(sess, config.ckpt_file)
+		# if not config.reuse:
+		# 	variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
+		# 	saver = tf.train.Saver(variables_to_restore)
+		# 	saver.restore(sess, config.ckpt_file)
+		# 	print(variables_to_restore)
 
 		# action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
 		# action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
