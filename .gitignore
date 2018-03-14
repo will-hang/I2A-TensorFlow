@@ -2,3 +2,5 @@ outputs/*
 ckpts/*
 .env/*
 results/*
+checkpoints/*
+tools/tmp/*
