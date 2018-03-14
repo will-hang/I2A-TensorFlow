@@ -17,6 +17,9 @@ from baselines.a2c.utils import discount_with_dones
 from baselines.a2c.utils import Scheduler, make_path, find_trainable_variables
 from baselines.a2c.utils import cat_entropy, mse
 
+from i2a_model_batch import EnvironmentModel
+import matplotlib.pyplot as plt
+
 DISPLAY_TIME = True
 
 class Config():
@@ -31,6 +34,7 @@ class Config():
     # filename must end in .ckpt. do not attempt to specify an actual file here
     ckpt_file = "/Users/williamhang/Downloads/env_model/model_pretrained_150epochs.ckpt"#"/home/cs234/env_model/model_pretrained_150epochs.ckpt" # this is an example
     frame_mean_path = "/Users/williamhang/Downloads/s_mean.npy"
+    env_model = None
 
 class Model(object):
 
@@ -106,7 +110,6 @@ class Model(object):
         self.value = act_model.value
         self.save = save
         self.load = load
-        tf.global_variables_initializer().run(session=sess)
 
 class Runner(object):
 
@@ -199,6 +202,15 @@ def learn(policy, env, seed, nsteps=5, total_timesteps=int(80e6), vf_coef=0.5, e
         ac_space = env.action_space
         model = Model(policy=policy, ob_space=ob_space, ac_space=ac_space, nenvs=nenvs, nsteps=nsteps, ent_coef=ent_coef, vf_coef=vf_coef,
             max_grad_norm=max_grad_norm, lr=lr, alpha=alpha, epsilon=epsilon, total_timesteps=total_timesteps, lrschedule=lrschedule)
+        # this next single line of code is responsible for 2 hours of my life lost, never to be seen again
+        tf.global_variables_initializer().run(session=sess)
+
+        config = Config()
+        env_model = EnvironmentModel(config)
+
+        model.act_model.imagination_core.set_env(env_model)
+        model.train_model.imagination_core.set_env(env_model)
+        
         runner = Runner(env, model, nsteps=nsteps, gamma=gamma)
         file_writer = tf.summary.FileWriter('results/', sess.graph)
         nbatch = nenvs*nsteps

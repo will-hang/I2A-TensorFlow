@@ -20,11 +20,12 @@ class ImaginationCore(object):
 		self.config = config
 		self.frame_mean = np.load(config.frame_mean_path)
 		# you need to make the EnvironmentModel class
-		self.env_model = EnvironmentModel(config)
-
 		self.states = tf.placeholder(tf.float32, [None, *config.state_dims])
 		with tf.variable_scope('rollout_policy', reuse=True):
 			_, _, self.actions, _ = policy.forward(self.states)
+
+	def set_env(self, env_model):
+		self.env_model = env_model
 
 	def predict(self, states, init=False):
 		# TODO: i give you a batch of states, and you give me the predictions for the next state
@@ -61,18 +62,8 @@ class ImaginationCore(object):
 			feed_dict={
 				self.env_model.x: stacked
 			})
-
-		plt.imshow(states[-1].squeeze().astype(np.uint8), cmap='Greys_r', vmin=0, vmax=255)
-		plt.show()
-		# plt.imshow(imagined_next_states[-1].squeeze().astype(np.uint8), cmap='Greys_r')
-		# plt.show()
-		# if init:
-			# np.save('results/states.npy', states)
-			# np.save('results/imagined_next_states_.npy', imagined_next_states * 255)
+		
 		imagined_next_states = imagined_next_states * 255. + self.frame_mean
-
-		plt.imshow(imagined_next_states[-1].squeeze().astype(np.uint8), cmap='Greys_r', vmin=0, vmax=255)
-		plt.show()
 		
 		imagined_next_states = np.concatenate([states[:, :, :, 1:], imagined_next_states], axis=-1)
 		imagined_next_states = imagined_next_states.reshape(bsz, config.n_actions, 84, 84, 4)
@@ -91,16 +82,9 @@ class EnvironmentModel(object):
 		self.config = config
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.channels + config.n_actions])
 		self.build_graph()
-		if not config.reuse:
-			variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
-			saver = tf.train.Saver(variables_to_restore)
-			saver.restore(sess, config.ckpt_file)
-			print(variables_to_restore)
-
-		# action_1hot = tf.expand_dims(tf.expand_dims(tf.one_hot(self.actions[:,i], config.n_actions), axis=1), axis=1)
-		# action_tile = tf.tile(action_1hot, [1, config.frame_dims[0], config.frame_dims[1],1])
-		# current_inputs = tf.concat([current_state, action_tile], axis=-1)
-		# pred_state = tf.concat([current_state[:, :, :, 1:config.n_stacked], pred_frame], axis=3)
+		variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
+		saver = tf.train.Saver(variables_to_restore)
+		saver.restore(sess, config.ckpt_file)
 
 	def build_graph(self):
 		with tf.variable_scope('worker', reuse=self.config.reuse):

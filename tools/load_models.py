@@ -13,13 +13,13 @@ sess = tf.Session()
 
 class EnvironmentModel(object):
 	def __init__(self, config):
-		sess = tf.get_default_session()
+		ses = tf.get_default_session()
 		self.config = config
 		self.x = tf.placeholder(tf.float32, [None] + config.frame_dims + [config.channels + config.n_actions])
 		self.build_graph()
 		variables_to_restore = [v for v in tf.global_variables() if v.name.startswith("worker")]
 		saver = tf.train.Saver(variables_to_restore)
-		saver.restore(sess, config.ckpt_file)
+		saver.restore(ses, config.ckpt_file)
 
 	def build_graph(self):
 		with tf.variable_scope('worker', reuse=self.config.reuse):
@@ -179,13 +179,14 @@ acts[:, :, :, 4] = 1
 inputs = np.concatenate([frame, acts], axis=-1)
 
 with sess:
-	model = EnvironmentModel(config)
+	model1 = EnvironmentModel(config)
+	config.reuse = True
+	model2 = EnvironmentModel(config)
 	# saver = tf.train.Saver()
 	# saver.restore(sess, config.load_ckpt)
 	# print("Model restored.")
 
-	output = sess.run(model.pred_state, feed_dict={model.x: stacked})[-1]
-	output = np.expand_dims
+	output = sess.run(model2.pred_state, feed_dict={model2.x: stacked})[10]
 	output = output * 255. + frame_mean
 	plt.imshow(output.squeeze().astype(np.uint8), cmap='Greys_r')
 	plt.show()
