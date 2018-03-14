@@ -42,7 +42,7 @@ class Batcher():
 				# cv2.imshow("State 0",scipy.misc.imresize(np.squeeze(state, axis=0), (42,42)))
 				# cv2.waitKey(0)
 
-			action = [self.actor.act(state)]
+			action = [self.actor.act(state)[0]]
 			next_state, reward, done, info = self.env.step(action)
 			try:
 				states
