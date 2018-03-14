@@ -17,6 +17,8 @@ from baselines.a2c.utils import discount_with_dones
 from baselines.a2c.utils import Scheduler, make_path, find_trainable_variables
 from baselines.a2c.utils import cat_entropy, mse
 
+DISPLAY_TIME = True
+
 class Config():
     n_actions = 6
     state_dims = [84, 84, 4]
@@ -203,8 +205,17 @@ def learn(policy, env, seed, nsteps=5, total_timesteps=int(80e6), vf_coef=0.5, e
         reward_list = []
         log_rewards = []
         for update in range(1, total_timesteps//nbatch+1):
+            if DISPLAY_TIME:
+                s = time.time()
             obs, rs, rr, rewards, masks, actions, values, ep_reward_means = runner.run()
+            if DISPLAY_TIME:
+                e = time.time()
+                print('Running took {} seconds'.format(e - s))
+                s = time.time()
             policy_loss, value_loss, policy_entropy = model.train(obs, rs, rr, rewards, masks, actions, values)
+            if DISPLAY_TIME:
+                e = time.time()
+                print('Training took {} seconds'.format(e - s))
             
             nseconds = time.time()-tstart
             fps = int((update*nbatch)/nseconds)
