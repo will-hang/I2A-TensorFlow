@@ -22,12 +22,12 @@ class Config():
     state_dims = [84, 84, 4]
     channels = 4
     frame_dims = [84, 84]
-    rollout_length = 3
+    rollout_length = 5
     hidden_dim = 512
     lstm_layers = 1
     reuse = False
     # filename must end in .ckpt. do not attempt to specify an actual file here
-    ckpt_file = "/Users/williamhang/Downloads/model12800_2res_100epochs.ckpt" # this is an example
+    ckpt_file = "/home/cs234/env_model/model_pretrained_150epochs.ckpt" # this is an example
 
 class Model(object):
 
@@ -198,17 +198,26 @@ def learn(policy, env, seed, nsteps=5, total_timesteps=int(80e6), vf_coef=0.5, e
         file_writer = tf.summary.FileWriter('results/', sess.graph)
         nbatch = nenvs*nsteps
         tstart = time.time()
+
+        entropy = []
+        reward_list = []
+        log_rewards = []
         for update in range(1, total_timesteps//nbatch+1):
-            s = time.time()
             obs, rs, rr, rewards, masks, actions, values, ep_reward_means = runner.run()
-            e = time.time()
-            print(e - s)
-            s = time.time()
             policy_loss, value_loss, policy_entropy = model.train(obs, rs, rr, rewards, masks, actions, values)
-            e = time.time()
-            print(e - s)
+            
             nseconds = time.time()-tstart
             fps = int((update*nbatch)/nseconds)
+
+            if ep_reward_means != None:
+                summary = tf.Summary()
+                summary.value.add(tag='Rewards', simple_value=ep_reward_means)
+                file_writer.add_summary(summary, update*nbatch)
+                reward_list.append([update*nbatch, ep_reward_means])
+                np.save('checkpoints/rewards', reward_list)
+                print('LOG: Mean rewards - {}'.format(ep_reward_means))
+                log_rewards.append(ep_reward_means)
+
             if update % log_interval == 0 or update == 1:
                 ev = explained_variance(values, rewards)
                 logger.record_tabular("nupdates", update)
@@ -217,18 +226,21 @@ def learn(policy, env, seed, nsteps=5, total_timesteps=int(80e6), vf_coef=0.5, e
                 logger.record_tabular("policy_entropy", float(policy_entropy))
                 logger.record_tabular("value_loss", float(value_loss))
                 logger.record_tabular("explained_variance", float(ev))
-                if ep_reward_means != None:
-                    logger.record_tabular("mean_episode_rewards", float(ep_reward_means))
+                if len(log_rewards) > 0:
+                    logger.record_tabular("mean_episode_rewards", np.mean(log_rewards))
+                    log_rewards = []
                 logger.dump_tabular()
 
                 summary = tf.Summary()
                 summary.value.add(tag='Entropy', simple_value=policy_entropy)
-                if ep_reward_means != None:
-                    summary.value.add(tag='Rewards', simple_value=ep_reward_means)
+                    
                 file_writer.add_summary(summary, update*nbatch)
                 file_writer.flush()
 
-                print('saved checkpoint!')
+                print('LOG: Saved checkpoint!')
                 model.save("checkpoints/")
+
+                entropy.append([update*nbatch, policy_entropy])
+                np.save('checkpoints/entropy', entropy)
 
         env.close()
