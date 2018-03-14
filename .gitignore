@@ -1,3 +1,5 @@
 outputs/*
 ckpts/*
 .env/*
+env_model/output.txt
+env_model/datasets/*
