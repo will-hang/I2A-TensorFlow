@@ -21,7 +21,7 @@ class ImaginationCore(object):
 		# you need to make the EnvironmentModel class
 		self.env_model = EnvironmentModel(config)
 
-		self.states = tf.placeholder(tf.float32, [config.n_actions, *config.state_dims])
+		self.states = tf.placeholder(tf.float32, [None, *config.state_dims])
 		with tf.variable_scope('rollout_policy', reuse=True):
 			_, _, self.actions, _ = policy.forward(self.states)
 
@@ -34,17 +34,21 @@ class ImaginationCore(object):
 
 		sess = tf.get_default_session()
 		config = self.config
+		bsz = states.shape[0]
+		flat_bsz = bsz * config.n_actions
+		# states is [-1, n_actions, 84, 84, 4]
+		states = states.reshape((flat_bsz, 84, 84, 4))
 		imagined_actions = None
 		if init:
-			imagined_actions = np.array(range(config.n_actions))
+			imagined_actions = np.array(bsz * [range(config.n_actions)]).reshape(-1)
 		else:
 			imagined_actions = 	sess.run(
 									self.actions,
 									feed_dict={
 										self.states: states
 									})
-
-		action_tile = np.zeros((config.n_actions, *config.frame_dims, config.n_actions))
+		# states is now [-1, 84, 84, 4] and actions is [-1]
+		action_tile = np.zeros((flat_bsz, *config.frame_dims, config.n_actions))
 		for idx, act in enumerate(imagined_actions.tolist()):
 			action_tile[idx, :, :, act] = 1
 		stacked = np.concatenate([states, action_tile], axis=-1)
@@ -56,6 +60,8 @@ class ImaginationCore(object):
 			})
 
 		imagined_next_states = np.concatenate([states[:, :, :, :-1], imagined_next_states], axis=-1)
+		imagined_next_states = imagined_next_states.reshape(bsz, config.n_actions, 84, 84, 4)
+		imagined_rewards = imagined_rewards.reshape(bsz, config.n_actions)
 
 		return imagined_next_states, imagined_rewards
 
@@ -180,14 +186,12 @@ class I2A(object):
 
 	def act(self, state):
 		# i2a gets a 1-batch of states
-		# [1, 84, 84, 4]
+		# [-1, 84, 84, 4]
 		sess = tf.get_default_session()
 		rollouts_s, rollouts_r = self.rollout(state)
 		# we should get something that is
-		# rollouts_s: [n_actions, rollout_length, 84, 84, 4]
-		# rollouts_r: [n_actions, rollout_length]
-		rollouts_s = np.expand_dims(rollouts_s, axis=0)
-		rollouts_r = np.expand_dims(rollouts_r, axis=0)
+		# rollouts_s: [-1, n_actions, rollout_length, 84, 84, 4]
+		# rollouts_r: [-1, n_actions, rollout_length]
 		logits, pi, actions, vf = sess.run(
 			[self.logits, self.pi, self.actions, self.vf],
 			feed_dict={
@@ -199,13 +203,13 @@ class I2A(object):
 		return actions, vf, rollouts_s, rollouts_r
 
 	def value(self, state):
+		# i2a gets a 1-batch of states
+		# [-1, 84, 84, 4]
 		sess = tf.get_default_session()
 		rollouts_s, rollouts_r = self.rollout(state)
 		# we should get something that is
-		# rollouts_s: [n_actions, rollout_length, 84, 84, 4]
-		# rollouts_r: [n_actions, rollout_length]
-		rollouts_s = np.expand_dims(rollouts_s, axis=0)
-		rollouts_r = np.expand_dims(rollouts_r, axis=0)
+		# rollouts_s: [-1, n_actions, rollout_length, 84, 84, 4]
+		# rollouts_r: [-1, n_actions, rollout_length]
 		logits, pi, actions, vf = sess.run(
 			[self.logits, self.pi, self.actions, self.vf],
 			feed_dict={
@@ -216,11 +220,12 @@ class I2A(object):
 		# (rollouts_s, rollouts_r) is in a tuple because this is literally our state for I2A
 		return vf
 
-	def rollout(self, state):
+	def rollout(self, states):
 		# initialize state for batch rollouts
-		# this is of shape [n_actions, 84, 84, 4]
+		# this is of shape [-1, n_actions, 84, 84, 4]
 		config = self.config
-		states = np.concatenate([state] * config.n_actions, axis=0)
+		states = np.expand_dims(states, axis=1)
+		states = np.concatenate([states] * config.n_actions, axis=1)
 		# roll everything out and put it in a placeholder
 		rollouts_s = []
 		rollouts_r = []
@@ -233,14 +238,15 @@ class I2A(object):
 			rollouts_r.append(rewards)
 			# advance
 			states = next_states
-		# you now have something of [rollout_length, n_actions, 84, 84, 4]
-		rollouts_s = np.array(rollouts_s)
-		rollouts_r = np.array(rollouts_r).reshape(config.rollout_length, config.n_actions)
-		rollouts_s = np.transpose(rollouts_s, (1, 0, 2, 3, 4))
-		rollouts_r = np.transpose(rollouts_r, (1, 0))
+		# rollouts_s should be a list of objects of [-1, n_actions, 84, 84, 4]
+		# we want to stack them so the new rollouts_s is [-1, rollout_length, n_actions, 84, 84, 4]
+		rollouts_s = np.stack(rollouts_s, axis=1)
+		rollouts_r = np.stack(rollouts_r, axis=1).reshape(-1, config.rollout_length, config.n_actions)
+		rollouts_s = np.transpose(rollouts_s, (0, 2, 1, 3, 4, 5))
+		rollouts_r = np.transpose(rollouts_r, (0, 2, 1))
 		return rollouts_s, rollouts_r
 
-# ###### TEST CODE
+# # ###### TEST CODE
 # class config():
 # 	n_actions = 6
 # 	state_dims = [84, 84, 4]
@@ -265,9 +271,9 @@ class I2A(object):
 # sess.run(tf.global_variables_initializer())
 # sess.run(tf.local_variables_initializer())
 
-# state = np.random.random((1, 84, 84, 4))
+# state = np.random.random((2, 84, 84, 4))
 # with sess:
-	# print(i2a.act(state))
+# 	print(i2a.act(state))
 
 # for i in range(64):
 # 	rand1 = 4#np.random.random()
