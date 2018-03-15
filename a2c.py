@@ -40,7 +40,7 @@ class Model(object):
 
     def __init__(self, policy, ob_space, ac_space, nenvs, nsteps,
             ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, lr=7e-4,
-            alpha=0.99, epsilon=1e-5, lambda_dist=0.01, total_timesteps=int(80e6), lrschedule='linear'):
+            alpha=0.99, epsilon=1e-5, lambda_dist=0.01, total_timesteps=int(20e6), lrschedule='linear'):
 
         sess = tf.get_default_session()
         nact = ac_space.n
