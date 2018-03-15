@@ -62,7 +62,7 @@ class ImaginationCore(object):
 			feed_dict={
 				self.env_model.x: stacked
 			})
-		
+
 		imagined_next_states = imagined_next_states * 255. + self.frame_mean
 		
 		imagined_next_states = np.concatenate([states[:, :, :, 1:], imagined_next_states], axis=-1)
@@ -124,11 +124,13 @@ class Encoder(object):
 		# now feats is something like [bsz, 11, 11, 64]
 		# we need to generate a reward tensor that is [bsz, 11, 11, 1] and concat this with feats
 		# sorry, what you are about to see really sucks
-		r = tf.reshape(r, [-1])
-		r = tf.tile(r, [121])
-		r = tf.reshape(r, [121, -1])
-		r = tf.transpose(r)
-		r = tf.reshape(r, [-1, 11, 11, 1])
+		# r = tf.reshape(r, [-1])
+		# r = tf.tile(r, [121])
+		# r = tf.reshape(r, [121, -1])
+		# r = tf.transpose(r)
+		# r = tf.reshape(r, [-1, 11, 11, 1])
+		r = tf.expand_dims(tf.expand_dims(r, axis=1), axis=2)
+		r = tf.tile(r, [1, 2, 2])
 		# stick feats and r together!
 		feats = tf.concat([feats, r], -1)
 		# feats should be [-1, 11, 11, 65] right now
