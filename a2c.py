@@ -40,7 +40,7 @@ class Model(object):
 
     def __init__(self, policy, ob_space, ac_space, nenvs, nsteps,
             ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, lr=7e-4,
-            alpha=0.99, epsilon=1e-5, lambda_dist=0.01, total_timesteps=int(20e6), lrschedule='linear'):
+            alpha=0.99, epsilon=1e-5, lambda_dist=0.01, total_timesteps=None, lrschedule='linear'):
 
         sess = tf.get_default_session()
         nact = ac_space.n
@@ -192,7 +192,7 @@ class Runner(object):
         ep_reward_means = np.mean(self.tot_rewards) if len(self.tot_rewards) > 0 else None
         return mb_obs, mb_rs, mb_rr, mb_rewards, mb_masks, mb_actions, mb_values, ep_reward_means
 
-def learn(policy, env, seed, nsteps=5, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100, args=None):
+def learn(policy, env, seed, nsteps=5, total_timesteps=int(5e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100, args=None):
     tf.reset_default_graph()
     set_global_seeds(seed)
     print('LEARNING RATE - {}'.format(args.lr))
