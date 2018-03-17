@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from models import Policy, natureCNN, linear, dynamic_rnn, justCNN
 
-# TEST = True
+TEST = False
 
 # sess = tf.Session()
 		

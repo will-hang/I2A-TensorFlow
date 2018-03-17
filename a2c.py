@@ -20,7 +20,7 @@ from baselines.a2c.utils import cat_entropy, mse
 from i2a_model_batch import EnvironmentModel
 import matplotlib.pyplot as plt
 
-DISPLAY_TIME = True
+DISPLAY_TIME = False
 
 class Config():
     n_actions = 6
@@ -195,7 +195,9 @@ class Runner(object):
 def learn(policy, env, seed, nsteps=5, total_timesteps=int(80e6), vf_coef=0.5, ent_coef=0.01, max_grad_norm=0.5, lr=7e-4, lrschedule='linear', epsilon=1e-5, alpha=0.99, gamma=0.99, log_interval=100, args=None):
     tf.reset_default_graph()
     set_global_seeds(seed)
-
+    print('LEARNING RATE - {}'.format(args.lr))
+    print('MAX GRAD NORM - {}'.format(args.max_grad_norm))
+    print('DISTRIBUTIONAL CE WEIGHT - {}'.format(args.lambda_dist))
     with tf.Session() as sess:
         nenvs = env.num_envs
         ob_space = env.observation_space
