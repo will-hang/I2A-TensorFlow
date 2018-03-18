@@ -32,8 +32,8 @@ class Config():
     lstm_layers = 1
     reuse = False
     # filename must end in .ckpt. do not attempt to specify an actual file here
-    ckpt_file = "/Users/williamhang/Downloads/env_model/model_pretrained_150epochs.ckpt"#"/home/cs234/env_model/model_pretrained_150epochs.ckpt" # this is an example
-    frame_mean_path = "/Users/williamhang/Downloads/s_mean.npy"
+    ckpt_file = "/home/brandon/env_model/model_pretrained_150epochs.ckpt"#"/home/cs234/env_model/model_pretrained_150epochs.ckpt" # this is an example
+    frame_mean_path = "/home/brandon/s_mean.npy"
     env_model = None
 
 class Model(object):
