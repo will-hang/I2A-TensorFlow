@@ -16,7 +16,7 @@ def train(env_id, num_timesteps, seed, policy, lrschedule, num_env, args):
         policy_fn = LstmPolicy
     elif policy == 'lnlstm':
         policy_fn = LnLstmPolicy
-    env = VecFrameStack(make_atari_env('MsPacman-v0', num_env, seed), 4)
+    env = VecFrameStack(make_atari_env('MsPacmanNoFrameskip-v0', num_env, seed), 4)
     learn(policy_fn, env, seed, total_timesteps=int(num_timesteps * 1.1), lrschedule=lrschedule, args=args)
     env.close()
 

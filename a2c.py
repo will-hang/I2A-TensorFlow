@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 DISPLAY_TIME = False
 
 class Config():
-    n_actions = 6
+    n_actions = 9
     state_dims = [84, 84, 4]
     channels = 4
     frame_dims = [84, 84]

@@ -1,0 +1,28 @@
+--------------------------------------------------------------------------
+[[51376,1],0]: A high-performance Open MPI point-to-point messaging module
+was unable to find any relevant network interfaces:
+
+Module: OpenFabrics (openib)
+  Host: FINALPROJECTVM3
+
+Another transport will be used instead, although this may result in
+lower performance.
+--------------------------------------------------------------------------
+Logging to /tmp/openai-2018-03-19-07-13-13-111552
+2018-03-19 07:13:14.172507: I tensorflow/core/platform/cpu_feature_guard.cc:137] Your CPU supports instructions that this TensorFlow binary was not compiled to use: SSE4.1 SSE4.2 AVX AVX2 FMA
+2018-03-19 07:13:14.372078: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1030] Found device 0 with properties: 
+name: Tesla M60 major: 5 minor: 2 memoryClockRate(GHz): 1.1775
+pciBusID: 3e01:00:00.0
+totalMemory: 7.94GiB freeMemory: 7.85GiB
+2018-03-19 07:13:14.372153: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1120] Creating TensorFlow device (/device:GPU:0) -> (device: 0, name: Tesla M60, pci bus id: 3e01:00:00.0, compute capability: 5.2)
+LEARNING RATE - 0.0005
+MAX GRAD NORM - 0.5
+DISTRIBUTIONAL CE WEIGHT - 0.001
+---------------------------------
+| explained_variance | -13.7    |
+| fps                | 10       |
+| nupdates           | 1        |
+| policy_entropy     | 2.2      |
+| total_timesteps    | 80       |
+| value_loss         | 0.151    |
+---------------------------------

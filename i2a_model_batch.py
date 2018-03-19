@@ -368,5 +368,3 @@ class I2A(object):
 # 	feed_dict={
 # 		inputs: x
 # 	})[0]
-
-# print(np.mean(p, axis=(0, 2)).tolist())
