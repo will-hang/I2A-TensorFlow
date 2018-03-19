@@ -1,13 +1,9 @@
 import numpy as np
 import argparse
-import gym
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
-import matplotlib.pyplot as plt
 
-from baselines.common.vec_env.vec_frame_stack import VecFrameStack
-from baselines.common.cmd_util import make_atari_env
-
+'''
 def normalizedColumnsInitializer(std=1.0):
 	def _initializer(shape, dtype=None, partition_info=None):
 		out = np.random.randn(*shape).astype(np.float32)
@@ -40,6 +36,7 @@ def show_images(images, cols = 1, titles = None):
 		a.set_title(title)
 	fig.set_size_inches(np.array(fig.get_size_inches()) * n_images)
 	plt.show()
+'''
 
 class EnvironmentModel(object):
 	def __init__(self, config):
@@ -132,6 +129,7 @@ class EnvironmentModel(object):
 		loss, pred_state, pred_reward, _ = sess.run([self.loss, self.pred_state, self.pred_reward, self.train_op])
 		return loss, pred_state, pred_reward
 
+'''
 class Actor():
 	def __init__(self, config, sess):
 		self.config = config
@@ -143,6 +141,7 @@ class Actor():
 
 	def act(self, state):
 		action = np.random.choice(list(range(config.n_actions)))
+
 		# self.inputs = graph.get_tensor_by_name('inputs:0')
 		# action = self.sess.run(
 		# 	[self.action],
@@ -182,11 +181,9 @@ class Worker():
 		nstep_next_states = np.stack([np.concatenate(next_states[i: i+n_steps], axis=2) for i in range(batch_size)], axis=0).astype(np.float32)
 
 		return nstep_states, nstep_actions, nstep_rewards, nstep_next_states
+'''
 
-
-def run(sess, config, env):
-	worker = Worker(config, env)
-
+def run(sess, config):
 	model = EnvironmentModel(config)
 	saver = tf.train.Saver()
 	if config.load_ckpt:
@@ -197,10 +194,10 @@ def run(sess, config, env):
 		sess.run(tf.local_variables_initializer())
 
 	# load dataset
-	states = np.load("./datasets/current_states.npy")
-	actions = np.load("./datasets/actions.npy")
-	rewards = np.expand_dims(np.load("./datasets/rewards.npy"), axis=1)
-	next_states = np.load("./datasets/next_states.npy")
+	states = np.load("/home/brandon1/mspacman_env_data/states.npy")
+	actions = np.load("/home/brandon1/mspacman_env_data/actions.npy")
+	rewards = np.load("/home/brandon1/mspacman_env_data/rewards.npy")
+	next_states = np.load("/home/brandon1/mspacman_env_data/next_states.npy")
 
 	train_states = states[:-config.batch_size, :, :, :]
 	train_actions = actions[:-config.batch_size, :]
@@ -257,22 +254,14 @@ def run(sess, config, env):
 	np.save('../outputs/losses', losses)
 
 parser = argparse.ArgumentParser(description='A3C')
-parser.add_argument('--env', default = 'PongNoFrameskip-v4',
-                    help='environment to test on')
-parser.add_argument('--num_env', type=int, default = '1',
-                    help='number of envs')
 parser.add_argument('--lr', type=float, default=1e-3,
                     help='learning rate')
 parser.add_argument('--max_grad_norm', type=float, default=0.5,
                     help='maximum gradient norm for clipping')
-parser.add_argument('--reuse', type=bool, default=False,
-                    help='policy architecture')
 parser.add_argument('--batch_size', type=int, default=128,
                     help='batch size')
 parser.add_argument('--num_epochs', type=int, default=10,
                     help='number of training epochs')
-parser.add_argument('--normalize_adv', type=bool, default=True,
-                    help='normalize advantage')
 parser.add_argument('--seed', type=int, default=123,
                 	help='random seed')
 parser.add_argument('--loss_weight', type=float, default=0.9,
@@ -288,13 +277,11 @@ if __name__ == '__main__':
 	config = parser.parse_args()
 
 	tf.set_random_seed(config.seed)
-
-	env = VecFrameStack(make_atari_env(config.env, config.num_env, config.seed), 4)
 	sess = tf.Session()
 
 	config.frame_dims = [84, 84]
 	config.n_stacked = 4
-	config.n_actions = int(env.action_space.n)
+	config.n_actions = 9
 	config.scope = 'worker'
 
-	run(sess, config, env)
+	run(sess, config)
